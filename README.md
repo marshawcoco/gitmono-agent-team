@@ -23,10 +23,16 @@
 2. 在本仓库安装 lockfile 固定的运行时依赖。
 
    ```powershell
+   Set-Location -LiteralPath '<ABSOLUTE_PATH_TO_THIS_REPOSITORY>'
    npm ci
    ```
 
-3. 将 [mcp/mcp.template.json](mcp/mcp.template.json) 复制到所用 Agent 客户端的 MCP 配置，并把 `<ABSOLUTE_PATH_TO_THIS_REPOSITORY>` 替换为本仓库绝对路径。`libra` 是 Libra 官方示例中的 stdio MCP；`team-protocol` 是本仓库提供的协作接口。
+3. 按客户端选择配置模板，并替换其中的两个绝对路径占位符：
+
+   - Codex：将 [mcp/codex.config.toml.example](mcp/codex.config.toml.example) 中的配置段合并到 `config.toml`。
+   - 接受顶层 `mcpServers` JSON 的客户端：使用 [mcp/mcp.template.json](mcp/mcp.template.json)。
+
+   两种格式不能直接互换；完整说明见 [mcp/README.md](mcp/README.md)。`libra` 是 Libra 的 stdio MCP；`team-protocol` 是本仓库提供的协作接口。
 
 4. 复制 [examples/intent-spec.example.json](examples/intent-spec.example.json)，为一次工作创建 IntentSpec。将同一文件、同一 `baseCommit` 交给三个 Agent。
 
@@ -77,7 +83,7 @@ test/                     协议与 MCP 调用测试
 
 ## 与 Libra 的关系
 
-Libra 是 Git 兼容、面向 Agent 的版本控制层，可捕获 Agent session 和 checkpoint，并原生提供 MCP 接入。这里按照其公开配置采用：
+Libra 是 Git 兼容、面向 Agent 的版本控制层，可捕获 Agent session 和 checkpoint，并原生提供 MCP 接入。其 stdio MCP 的进程启动参数为：
 
 ```json
 {
