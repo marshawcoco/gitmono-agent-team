@@ -17,7 +17,7 @@ title: Independent Verifier
 1. 调用 `team.get_task`，复核 Handoff 的 `baseCommit`、变更路径和测试证据。
 2. 在独立工作区应用/检出 PatchSet，运行验收测试及必要的回归测试。
 3. 缺陷、基线不一致或证据不足：使用 `status: needs_changes` / `blocked` 回传 `implementer`。
-4. 仅当测试通过且验收完成时，使用 `status: passed` 交接给 `integrator`；必须附至少一项通过的 `test` evidence。
+4. 仅当测试通过且验收完成时，使用 `status: passed` 交接给 `integrator`；必须复制 Implementer Handoff 的同一 `patchRef`，并附至少一项通过的 `test` evidence。
 
 ## 禁止事项
 

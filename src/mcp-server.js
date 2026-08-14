@@ -31,13 +31,41 @@ export const TOOL_DEFINITIONS = Object.freeze([
         from: { type: "string", enum: AGENT_IDS },
         to: { type: "string", enum: ["implementer", "verifier", "integrator", "human", "orchestrator"] },
         status: { type: "string", enum: ["ready", "passed", "needs_changes", "approved", "blocked"] },
-        patchRef: { type: "string" },
+        patchRef: { type: "string", minLength: 1, pattern: "\\S" },
         changedPaths: { type: "array", items: { type: "string" } },
         summary: { type: "string" },
         evidence: { type: "array" },
         libra: { type: "object" },
         createdAt: { type: "string" }
-      }
+      },
+      allOf: [{
+        if: {
+          anyOf: [
+            { properties: { from: { const: "implementer" }, status: { const: "ready" } }, required: ["from", "status"] },
+            { properties: { from: { const: "verifier" }, status: { const: "passed" } }, required: ["from", "status"] },
+            { properties: { from: { const: "integrator" }, status: { const: "approved" } }, required: ["from", "status"] }
+          ]
+        },
+        then: { required: ["patchRef"] }
+      }, {
+        if: {
+          properties: { status: { enum: ["ready", "passed", "approved"] } },
+          required: ["status"]
+        },
+        then: {
+          properties: {
+            evidence: {
+              not: {
+                contains: {
+                  type: "object",
+                  properties: { result: { enum: ["failed", "rejected"] } },
+                  required: ["result"]
+                }
+              }
+            }
+          }
+        }
+      }]
     }
   },
   {

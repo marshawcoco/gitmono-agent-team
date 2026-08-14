@@ -66,6 +66,84 @@ test("a verifier cannot pass without passed test evidence", () => {
   assert.equal(validateHandoff(invalid).valid, false);
 });
 
+test("positive verifier and integrator handoffs require patchRef", () => {
+  const verifier = handoff({
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    patchRef: undefined,
+    evidence: [{ kind: "test", result: "passed", summary: "tests passed" }]
+  });
+  const integrator = handoff({
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: undefined,
+    evidence: [{ kind: "review", result: "approved", summary: "review passed" }]
+  });
+
+  assert.equal(validateHandoff(verifier).valid, false);
+  assert.equal(validateHandoff(integrator).valid, false);
+});
+
+test("positive handoffs reject failed or rejected evidence", () => {
+  const positiveHandoffs = [
+    handoff({
+      evidence: [
+        { kind: "test", result: "passed", summary: "self-tests passed" },
+        { kind: "security", result: "failed", summary: "security scan failed" }
+      ]
+    }),
+    handoff({
+      from: "verifier",
+      to: "integrator",
+      status: "passed",
+      evidence: [
+        { kind: "test", result: "passed", summary: "acceptance tests passed" },
+        { kind: "test", result: "failed", summary: "regression test failed" }
+      ]
+    }),
+    handoff({
+      from: "integrator",
+      to: "human",
+      status: "approved",
+      evidence: [
+        { kind: "review", result: "approved", summary: "review approved" },
+        { kind: "review", result: "rejected", summary: "security review rejected" }
+      ]
+    })
+  ];
+
+  for (const positiveHandoff of positiveHandoffs) {
+    assert.equal(validateHandoff(positiveHandoff).valid, false);
+  }
+});
+
+test("negative handoffs retain their failure evidence", () => {
+  const negativeHandoffs = [
+    handoff({
+      status: "blocked",
+      evidence: [{ kind: "build", result: "failed", summary: "build failed" }]
+    }),
+    handoff({
+      from: "verifier",
+      to: "implementer",
+      status: "needs_changes",
+      evidence: [{ kind: "test", result: "failed", summary: "regression test failed" }]
+    }),
+    handoff({
+      from: "integrator",
+      to: "human",
+      status: "blocked",
+      evidence: [{ kind: "review", result: "rejected", summary: "review rejected" }]
+    })
+  ];
+
+  for (const negativeHandoff of negativeHandoffs) {
+    assert.deepEqual(validateHandoff(negativeHandoff), { valid: true, errors: [] });
+  }
+});
+
 test("the complete medium-risk evidence chain reaches the merge gate", () => {
   const implementation = handoff();
   const verification = handoff({
@@ -138,6 +216,202 @@ test("the MCP gate ignores caller-supplied handoffs", async (context) => {
   assert.equal(response.result.isError, false);
   assert.equal(response.result.structuredContent.handoffCount, 0);
   assert.equal(response.result.structuredContent.readyToMerge, false);
+});
+
+test("a new implementation invalidates earlier verification and approval", () => {
+  const implementationA = handoff({ patchRef: "refs/patchsets/session-timeout-a" });
+  const verificationA = handoff({
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    patchRef: implementationA.patchRef,
+    evidence: [{ kind: "test", result: "passed", summary: "patch A tests passed" }]
+  });
+  const integrationA = handoff({
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: implementationA.patchRef,
+    evidence: [{ kind: "review", result: "approved", summary: "patch A review passed" }]
+  });
+  const implementationB = handoff({
+    handoffId: "dbb1f9aa-1758-486b-983d-a8f82f6a093e",
+    patchRef: "refs/patchsets/session-timeout-b",
+    summary: "Delivered a revised PatchSet after the first review cycle."
+  });
+
+  const afterImplementationB = deriveGate({
+    handoffs: [implementationA, verificationA, integrationA, implementationB],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(afterImplementationB.verificationPassed, false);
+  assert.equal(afterImplementationB.reviewApproved, false);
+  assert.equal(afterImplementationB.readyToMerge, false);
+
+  const verificationB = handoff({
+    handoffId: "80181f2c-3fe2-48da-b41a-8cbfc7a8ee13",
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    patchRef: implementationB.patchRef,
+    evidence: [{ kind: "test", result: "passed", summary: "patch B tests passed" }]
+  });
+  const afterVerificationB = deriveGate({
+    handoffs: [implementationA, verificationA, integrationA, implementationB, verificationB],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(afterVerificationB.verificationPassed, true);
+  assert.equal(afterVerificationB.reviewApproved, false);
+  assert.equal(afterVerificationB.readyToMerge, false);
+
+  const integrationB = handoff({
+    handoffId: "72fd8ff0-c59b-4875-ab4a-624f4812c749",
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: implementationB.patchRef,
+    evidence: [{ kind: "review", result: "approved", summary: "patch B review passed" }]
+  });
+  const completePatchB = deriveGate({
+    handoffs: [implementationA, verificationA, integrationA, implementationB, verificationB, integrationB],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(completePatchB.patchRefConsistent, true);
+  assert.equal(completePatchB.readyToMerge, true);
+
+  const mismatchedChains = [
+    [implementationB, { ...verificationB, patchRef: implementationA.patchRef }, integrationB],
+    [implementationB, verificationB, { ...integrationB, patchRef: implementationA.patchRef }],
+    [implementationB, verificationB, { ...integrationB, patchRef: undefined }]
+  ];
+  for (const chain of mismatchedChains) {
+    const gate = deriveGate({ handoffs: chain, intentId: "add-session-timeout", risk: "medium" });
+    assert.equal(gate.patchRefConsistent, false);
+    assert.equal(gate.readyToMerge, false);
+  }
+});
+
+test("blocking evidence cannot be hidden beside positive evidence", () => {
+  const implementation = handoff();
+  const verification = handoff({
+    handoffId: "4495ce38-3d13-47b6-a89f-e410d2bdbf5b",
+    taskId: "verify-session-timeout",
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    evidence: [
+      { kind: "test", result: "passed", summary: "acceptance tests passed" },
+      { kind: "test", result: "failed", summary: "regression test failed" }
+    ]
+  });
+  const integration = handoff({
+    handoffId: "d563b9ea-ddce-4c15-bab6-9411f0375ff2",
+    taskId: "integrate-session-timeout",
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    evidence: [{ kind: "review", result: "approved", summary: "review approved" }]
+  });
+
+  const failedImplementation = {
+    ...implementation,
+    evidence: [
+      ...implementation.evidence,
+      { kind: "security", result: "failed", summary: "security scan failed" }
+    ]
+  };
+  const cleanVerificationForImplementation = {
+    ...verification,
+    evidence: [{ kind: "test", result: "passed", summary: "all tests passed" }]
+  };
+  const failedImplementationGate = deriveGate({
+    handoffs: [failedImplementation, cleanVerificationForImplementation, integration],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(failedImplementationGate.blockingEvidenceAbsent, false);
+  assert.equal(failedImplementationGate.readyToMerge, false);
+
+  const failedTestGate = deriveGate({
+    handoffs: [implementation, verification, integration],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(failedTestGate.testEvidencePassed, false);
+  assert.equal(failedTestGate.blockingEvidenceAbsent, false);
+  assert.equal(failedTestGate.readyToMerge, false);
+
+  const securityFailedVerification = {
+    ...verification,
+    evidence: [
+      { kind: "test", result: "passed", summary: "all tests passed" },
+      { kind: "security", result: "failed", summary: "security scan failed" }
+    ]
+  };
+  const securityVetoGate = deriveGate({
+    handoffs: [implementation, securityFailedVerification, integration],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(securityVetoGate.testEvidencePassed, true);
+  assert.equal(securityVetoGate.blockingEvidenceAbsent, false);
+  assert.equal(securityVetoGate.readyToMerge, false);
+
+  const cleanVerification = {
+    ...verification,
+    evidence: [{ kind: "test", result: "passed", summary: "all tests passed" }]
+  };
+  const rejectedReview = {
+    ...integration,
+    evidence: [
+      { kind: "review", result: "approved", summary: "review approved" },
+      { kind: "review", result: "rejected", summary: "security review rejected" }
+    ]
+  };
+  const rejectedReviewGate = deriveGate({
+    handoffs: [implementation, cleanVerification, rejectedReview],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(rejectedReviewGate.reviewApproved, false);
+  assert.equal(rejectedReviewGate.blockingEvidenceAbsent, false);
+  assert.equal(rejectedReviewGate.readyToMerge, false);
+
+  const disputedHumanApproval = {
+    ...integration,
+    evidence: [
+      { kind: "review", result: "approved", summary: "review approved" },
+      { kind: "human_approval", result: "approved", summary: "change manager approved" },
+      { kind: "human_approval", result: "rejected", summary: "security owner rejected" }
+    ]
+  };
+  const disputedApprovalGate = deriveGate({
+    handoffs: [implementation, cleanVerification, disputedHumanApproval],
+    intentId: "add-session-timeout",
+    risk: "high"
+  });
+  assert.equal(disputedApprovalGate.humanApproval, false);
+  assert.equal(disputedApprovalGate.blockingEvidenceAbsent, false);
+  assert.equal(disputedApprovalGate.readyToMerge, false);
+
+  const explicitHumanRejection = {
+    ...integration,
+    evidence: [
+      { kind: "review", result: "approved", summary: "review approved" },
+      { kind: "human_approval", result: "rejected", summary: "change manager rejected" }
+    ]
+  };
+  const mediumRiskVetoGate = deriveGate({
+    handoffs: [implementation, cleanVerification, explicitHumanRejection],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(mediumRiskVetoGate.humanApproval, true);
+  assert.equal(mediumRiskVetoGate.blockingEvidenceAbsent, false);
+  assert.equal(mediumRiskVetoGate.readyToMerge, false);
 });
 
 test("the MCP dispatcher persists a handoff and exposes tools", async (context) => {
