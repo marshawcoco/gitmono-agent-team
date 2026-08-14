@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20.x, 22.x, 24.x]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run protocol demo
+        run: npm run demo
+
+  artifacts:
+    name: Contracts and configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate JSON artifacts
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const files = [
+            "package.json",
+            "contracts/intent-spec.schema.json",
+            "contracts/handoff.schema.json",
+            "mcp/mcp.template.json"
+          ];
+          for (const file of files) {
+            JSON.parse(await readFile(file, "utf8"));
+            console.log(`validated ${file}`);
+          }
+          NODE
+
+      - name: Validate optional Codex TOML template
+        shell: bash
+        run: |
+          if [[ -f mcp/codex.config.toml.example ]]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          import tomllib
+
+          tomllib.loads(Path("mcp/codex.config.toml.example").read_text(encoding="utf-8"))
+          print("validated mcp/codex.config.toml.example")
+          PY
+          else
+            echo "Codex TOML template not present on this revision; skipping."
+          fi
+
+      - name: Validate optional Docker Compose model
+        shell: bash
+        run: |
+          if [[ -f deploy/compose.yaml ]]; then
+            docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
+          else
+            echo "Compose deployment not present on this revision; skipping."
+          fi
