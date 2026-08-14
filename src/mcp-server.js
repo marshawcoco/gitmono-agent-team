@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
 import path from "node:path";
 import { AGENT_IDS, ROLE_TASKS, deriveGate, validateHandoff } from "./protocol.js";
 
@@ -27,18 +28,41 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false,
       required: ["intentId", "taskId", "baseCommit", "from", "to", "status", "summary", "evidence"],
       properties: {
+        schemaVersion: { type: "string", const: "1.0" },
         handoffId: { type: "string" },
-        intentId: { type: "string" },
-        taskId: { type: "string" },
-        baseCommit: { type: "string" },
+        intentId: { type: "string", pattern: "^[a-z][a-z0-9-]{2,63}$" },
+        taskId: { type: "string", pattern: "^[a-z][a-z0-9-]{2,63}$" },
+        baseCommit: { type: "string", pattern: "^[a-f0-9]{7,64}$" },
         from: { type: "string", enum: AGENT_IDS },
         to: { type: "string", enum: ["implementer", "verifier", "integrator", "human", "orchestrator"] },
         status: { type: "string", enum: ["ready", "passed", "needs_changes", "approved", "blocked"] },
         patchRef: { type: "string", minLength: 1, pattern: "\\S" },
         changedPaths: { type: "array", items: { type: "string" } },
-        summary: { type: "string" },
-        evidence: { type: "array" },
-        libra: { type: "object" },
+        summary: { type: "string", minLength: 8 },
+        evidence: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "result", "summary"],
+            properties: {
+              kind: { type: "string", enum: ["build", "test", "review", "security", "human_approval", "finding"] },
+              result: { type: "string", enum: ["passed", "failed", "approved", "rejected", "not_run", "info"] },
+              summary: { type: "string", minLength: 3 },
+              command: { type: "string" },
+              ref: { type: "string" }
+            }
+          }
+        },
+        libra: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sessionId: { type: "string", minLength: 1 },
+            checkpointId: { type: "string", minLength: 1 }
+          }
+        },
         createdAt: { type: "string" }
       },
       allOf: [{
@@ -49,7 +73,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
             { properties: { from: { const: "integrator" }, status: { const: "approved" } }, required: ["from", "status"] }
           ]
         },
-        then: { required: ["patchRef"] }
+        then: {
+          properties: { patchRef: { type: "string", minLength: 1, pattern: "\\S" } },
+          required: ["patchRef"]
+        }
       }, {
         if: {
           properties: { status: { enum: ["ready", "passed", "approved"] } },
@@ -58,6 +85,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         then: {
           properties: {
             evidence: {
+              type: "array",
               not: {
                 contains: {
                   type: "object",
@@ -77,7 +105,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      properties: { intentId: { type: "string" } }
+      properties: { intentId: { type: "string", pattern: "^[a-z][a-z0-9-]{2,63}$" } }
     }
   },
   {
@@ -88,18 +116,40 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false,
       required: ["intentId"],
       properties: {
-        intentId: { type: "string" },
+        intentId: { type: "string", pattern: "^[a-z][a-z0-9-]{2,63}$" },
         risk: { type: "string", enum: ["low", "medium", "high"] },
-        baseCommit: { type: "string" }
+        baseCommit: { type: "string", pattern: "^[a-f0-9]{7,64}$" }
       }
     }
   }
 ]);
 
+const schemaValidator = new Ajv2020({ allErrors: true, strict: true });
+const TOOL_INPUT_VALIDATORS = new Map(
+  TOOL_DEFINITIONS.map((tool) => [tool.name, schemaValidator.compile(tool.inputSchema)])
+);
+const MAX_INPUT_VALIDATION_DETAILS = 8;
+
 function protocolError(message, details = []) {
   const error = new Error(message);
   error.details = details;
   return error;
+}
+
+function validateToolArguments(name, args) {
+  const validate = TOOL_INPUT_VALIDATORS.get(name);
+  if (!validate || validate(args)) return;
+  const validationErrors = validate.errors ?? [];
+  const hasOmittedErrors = validationErrors.length > MAX_INPUT_VALIDATION_DETAILS;
+  const visibleErrorLimit = hasOmittedErrors
+    ? MAX_INPUT_VALIDATION_DETAILS - 1
+    : MAX_INPUT_VALIDATION_DETAILS;
+  const details = validationErrors.slice(0, visibleErrorLimit).map((error) => {
+    const pathLabel = error.instancePath || "/";
+    return `${pathLabel} [${error.keyword}] ${error.message}`;
+  });
+  if (hasOmittedErrors) details.push("Additional validation errors omitted.");
+  throw protocolError("Tool arguments failed inputSchema validation.", details);
 }
 
 async function readHandoffs(handoffFile) {
@@ -124,6 +174,7 @@ export function createDispatcher({ stateDir = process.env.AGENT_TEAM_STATE_DIR ?
   return {
     handoffFile,
     async call(name, args = {}) {
+      validateToolArguments(name, args);
       switch (name) {
         case "team.get_task": {
           if (!AGENT_IDS.includes(args.agentId)) throw protocolError("agentId must identify one of the three Agent Team roles.");
@@ -212,7 +263,11 @@ export async function handleRequest(request, dispatcher) {
   }
   if (request.method === "tools/call") {
     try {
-      const result = await dispatcher.call(request.params?.name, request.params?.arguments ?? {});
+      const toolArguments = request.params
+        && Object.prototype.hasOwnProperty.call(request.params, "arguments")
+        ? request.params.arguments
+        : {};
+      const result = await dispatcher.call(request.params?.name, toolArguments);
       return requestResponse(request, { result: toolResult(result) });
     } catch (error) {
       return requestResponse(request, {

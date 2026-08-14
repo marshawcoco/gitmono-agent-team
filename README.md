@@ -20,11 +20,17 @@
    libra agent enable
    ```
 
-2. 将 [mcp/mcp.template.json](mcp/mcp.template.json) 复制到所用 Agent 客户端的 MCP 配置，并把 `<ABSOLUTE_PATH_TO_THIS_REPOSITORY>` 替换为本仓库绝对路径。`libra` 是 Libra 官方示例中的 stdio MCP；`team-protocol` 是本仓库提供的协作接口。
+2. 在本仓库安装 lockfile 固定的运行时依赖。
 
-3. 复制 [examples/intent-spec.example.json](examples/intent-spec.example.json)，为一次工作创建 IntentSpec。将同一文件、同一 `baseCommit` 交给三个 Agent。
+   ```powershell
+   npm ci
+   ```
 
-4. 按以下顺序交接：Implementer → Verifier → Integrator。每次交接由 `team.submit_handoff` 写入 `.agent-team/handoffs.jsonl`；集成前调用 `team.get_gate`。
+3. 将 [mcp/mcp.template.json](mcp/mcp.template.json) 复制到所用 Agent 客户端的 MCP 配置，并把 `<ABSOLUTE_PATH_TO_THIS_REPOSITORY>` 替换为本仓库绝对路径。`libra` 是 Libra 官方示例中的 stdio MCP；`team-protocol` 是本仓库提供的协作接口。
+
+4. 复制 [examples/intent-spec.example.json](examples/intent-spec.example.json)，为一次工作创建 IntentSpec。将同一文件、同一 `baseCommit` 交给三个 Agent。
+
+5. 按以下顺序交接：Implementer → Verifier → Integrator。每次交接由 `team.submit_handoff` 写入 `.agent-team/handoffs.jsonl`；集成前调用 `team.get_gate`。
 
    ```powershell
    npm test
@@ -38,7 +44,7 @@ agents/                   三个角色的系统提示与边界
 skills/                   三个角色可安装的 Agent Skill
 contracts/                IntentSpec、Handoff 的 JSON Schema
 mcp/                      MCP 客户端配置模板与工具契约
-src/mcp-server.js         无外部依赖的 stdio MCP 服务
+src/mcp-server.js         执行 JSON Schema 输入校验的 stdio MCP 服务
 src/protocol.js           校验、路由与合并门禁逻辑
 examples/                 可复制的 IntentSpec / Handoff 样例
 deploy/                   Mega + ScorpioFS Compose 与安装说明
