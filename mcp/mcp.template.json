@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "libra": {
+      "command": "libra",
+      "args": ["code", "--stdio"],
+      "cwd": "<ABSOLUTE_PATH_TO_YOUR_LIBRA_REPOSITORY>"
+    },
+    "team-protocol": {
+      "command": "node",
+      "args": ["src/mcp-server.js"],
+      "cwd": "<ABSOLUTE_PATH_TO_THIS_REPOSITORY>"
+    }
+  }
+}

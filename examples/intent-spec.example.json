@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "intentId": "add-session-timeout",
+  "title": "Add an inactivity timeout to authenticated sessions",
+  "target": {
+    "repository": "github.com/acme/identity",
+    "baseCommit": "a5bf591",
+    "allowedPaths": ["src/auth/", "test/auth/"]
+  },
+  "goal": "Expire inactive sessions after the configured timeout without affecting active sessions.",
+  "acceptanceCriteria": [
+    "An inactive session expires at the configured duration.",
+    "An active session refreshes its expiry time.",
+    "Existing authentication regression tests pass."
+  ],
+  "constraints": {
+    "risk": "medium",
+    "prohibitedActions": [
+      "Do not change token signing algorithms.",
+      "Do not modify files outside the allowed paths."
+    ]
+  },
+  "requiredEvidence": ["build", "test", "review"],
+  "taskDag": [
+    {
+      "taskId": "implement-session-timeout",
+      "owner": "implementer",
+      "dependsOn": [],
+      "outcome": "PatchSet plus self-test evidence"
+    },
+    {
+      "taskId": "verify-session-timeout",
+      "owner": "verifier",
+      "dependsOn": ["implement-session-timeout"],
+      "outcome": "Independent acceptance-test result"
+    },
+    {
+      "taskId": "integrate-session-timeout",
+      "owner": "integrator",
+      "dependsOn": ["verify-session-timeout"],
+      "outcome": "Evidence-backed merge decision"
+    }
+  ],
+  "libra": {
+    "sessionId": "libra-session-example",
+    "checkpointId": "libra-checkpoint-example"
+  }
+}

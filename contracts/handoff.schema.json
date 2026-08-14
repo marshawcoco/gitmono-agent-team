@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitmono.dev/contracts/handoff.schema.json",
+  "title": "GitMono Agent Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "handoffId", "intentId", "taskId", "baseCommit", "from", "to", "status", "summary", "evidence", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "handoffId": { "type": "string", "format": "uuid" },
+    "intentId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$" },
+    "taskId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$" },
+    "baseCommit": { "type": "string", "pattern": "^[a-f0-9]{7,64}$" },
+    "from": { "enum": ["implementer", "verifier", "integrator"] },
+    "to": { "enum": ["implementer", "verifier", "integrator", "human", "orchestrator"] },
+    "status": { "enum": ["ready", "passed", "needs_changes", "approved", "blocked"] },
+    "patchRef": { "type": "string", "minLength": 1 },
+    "changedPaths": { "type": "array", "items": { "type": "string" } },
+    "summary": { "type": "string", "minLength": 8 },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "result", "summary"],
+        "properties": {
+          "kind": { "enum": ["build", "test", "review", "security", "human_approval", "finding"] },
+          "result": { "enum": ["passed", "failed", "approved", "rejected", "not_run", "info"] },
+          "summary": { "type": "string", "minLength": 3 },
+          "command": { "type": "string" },
+          "ref": { "type": "string" }
+        }
+      }
+    },
+    "libra": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1 },
+        "checkpointId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

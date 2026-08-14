@@ -1,0 +1,14 @@
+{
+  "name": "gitmono-agent-team",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Three-agent, evidence-first collaboration contracts for Libra-backed repositories.",
+  "type": "module",
+  "scripts": {
+    "demo": "node src/demo.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

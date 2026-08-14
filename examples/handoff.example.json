@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "handoffId": "9ddc89a1-d0ca-4b06-a24f-17fd30e41d1a",
+  "intentId": "add-session-timeout",
+  "taskId": "verify-session-timeout",
+  "baseCommit": "a5bf591",
+  "from": "verifier",
+  "to": "integrator",
+  "status": "passed",
+  "patchRef": "refs/heads/agent/session-timeout",
+  "changedPaths": ["src/auth/session.ts", "test/auth/session.test.ts"],
+  "summary": "Independent acceptance and regression tests passed.",
+  "evidence": [
+    {
+      "kind": "test",
+      "result": "passed",
+      "command": "npm test -- session-timeout",
+      "summary": "18 tests passed"
+    }
+  ],
+  "libra": {
+    "sessionId": "libra-session-example",
+    "checkpointId": "libra-checkpoint-verify"
+  },
+  "createdAt": "2026-08-14T04:00:00.000Z"
+}

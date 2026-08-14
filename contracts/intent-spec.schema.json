@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitmono.dev/contracts/intent-spec.schema.json",
+  "title": "GitMono IntentSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "intentId", "title", "target", "goal", "acceptanceCriteria", "constraints", "taskDag"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "intentId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$" },
+    "title": { "type": "string", "minLength": 4, "maxLength": 160 },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "baseCommit", "allowedPaths"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "baseCommit": { "type": "string", "pattern": "^[a-f0-9]{7,64}$" },
+        "allowedPaths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+" }
+        }
+      }
+    },
+    "goal": { "type": "string", "minLength": 8 },
+    "acceptanceCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 3 }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk", "prohibitedActions"],
+      "properties": {
+        "risk": { "enum": ["low", "medium", "high"] },
+        "prohibitedActions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 3 }
+        }
+      }
+    },
+    "requiredEvidence": {
+      "type": "array",
+      "items": { "enum": ["build", "test", "review", "security", "human_approval"] }
+    },
+    "taskDag": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["taskId", "owner", "dependsOn", "outcome"],
+        "properties": {
+          "taskId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$" },
+          "owner": { "enum": ["implementer", "verifier", "integrator"] },
+          "dependsOn": { "type": "array", "items": { "type": "string" } },
+          "outcome": { "type": "string", "minLength": 3 }
+        }
+      }
+    },
+    "libra": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1 },
+        "checkpointId": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
