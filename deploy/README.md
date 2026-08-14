@@ -19,6 +19,20 @@ test -c /dev/fuse
 
 ScorpioFS 的 FUSE mount 默认只存在于容器的 mount namespace。通过其 HTTP API 操作不需要额外设置；若宿主机或其他容器必须直接读取挂载目录，还需要单独配置 `rshared` bind mount 和 mount propagation。
 
+## CI 中的两级容器验证
+
+普通 Pull Request 在 GitHub 托管的 `ubuntu-24.04` runner 上执行无 FUSE 的核心检查：核对固定 submodule、构建 ScorpioFS 镜像，并仅以 `docker compose ... up --no-build mega` 启动 Mega 及其依赖。CI 会用审查过的 OCI manifest digest 覆盖 Compose 和 ScorpioFS Dockerfile 中的可变标签，避免同一次提交因标签移动而改变验证镜像；Debian 软件源与 crates.io 解析仍属于后续需要继续收紧的外部输入。
+
+真实 mount/read/write 验证只能手工触发 `.github/workflows/fuse-smoke.yml`，并需要：
+
+- Linux x86-64 主机存在 `/dev/fuse`，Docker 可映射该设备并授予 `SYS_ADMIN`；
+- runner 标签同时包含 `self-hosted`、`linux`、`x64`、`fuse`、`ephemeral`；
+- runner 采用一次性 JIT 或 `config.sh --ephemeral` 注册，job 结束后销毁整台运行环境；
+- GitHub `trusted-fuse` Environment 只允许默认分支，并配置独立 required reviewer；
+- runner 不保存仓库 secret，且不与生产工作负载共用 Docker daemon。
+
+触发工作流时，`mount_path` 必须是当前 Mega 数据中存在的 monorepo 路径。工作流会等待 `/antares/mounts/{id}/ready`，在 ScorpioFS 容器内确认真实 FUSE mount，写入、读取并删除探针文件，随后卸载并删除本次 Compose volumes。
+
 ## 安装
 
 新克隆仓库时一并拉取固定的上游提交：

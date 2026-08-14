@@ -58,6 +58,19 @@ submodules/               固定版本的 Mega、ScorpioFS、Libra 上游仓库
 test/                     协议与 MCP 调用测试
 ```
 
+## CI 与合并门禁
+
+Pull Request 使用两层门禁：
+
+- `Node 22.x` 与 `Node 24.x` 从 `package-lock.json` 执行完整测试；Node 24 还强制执行原生覆盖率阈值和隔离状态目录下的 demo 断言。Node 20 已结束维护，不再作为支持或合并门禁。
+- `Contracts and configuration` 会编译 Draft 2020-12 Schema、验证正反样例与运行时校验器、检查 JavaScript/JSON/TOML，并对锁定依赖执行高危漏洞审计。
+- `Submodules and containers` 会初始化并核对三个固定 gitlink 与 canonical URL，从固定 ScorpioFS 源码构建镜像，再启动 PostgreSQL、Redis、RustFS、bucket 初始化和 Mega，检查健康状态、重启次数与真实 `/api/v1/status` 响应。托管 runner 不启动需要 `/dev/fuse` 的 ScorpioFS 服务。
+- 独立的 `Dependency review` 与 `CodeQL` 检查依赖增量和 JavaScript 安全问题。启用 `Dependency review` 为必需检查前，仓库必须先启用 Dependency graph，并确认该检查至少成功运行一次。
+
+所有复用 Action 均固定到完整 commit SHA；除 CodeQL 外的 PR 工作流只有 `contents: read`。CodeQL 额外获得读取工作流元数据所需的 `actions: read` 与上传分析结果所需的 `security-events: write`。仓库不使用 `pull_request_target`，也不会由 CI 自动合并。
+
+真实 FUSE 验证位于手工触发的 `Trusted FUSE smoke` 工作流。它只接受默认分支，使用受保护的 `trusted-fuse` Environment，并要求专用 runner 同时具有 `self-hosted`、`linux`、`x64`、`fuse`、`ephemeral` 标签。该 runner 必须用 JIT/`--ephemeral` 注册并在每个 job 后销毁；普通 PR 代码不得在其上执行。
+
 ## 不可变协作规则
 
 1. `baseCommit` 是本轮协作的基线；任一 Agent 发现不一致必须阻塞交接。

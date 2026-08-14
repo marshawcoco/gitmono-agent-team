@@ -61,7 +61,12 @@
           }
         ]
       },
-      "then": { "required": ["patchRef"] }
+      "then": {
+        "properties": {
+          "patchRef": { "type": "string", "minLength": 1, "pattern": "\\S" }
+        },
+        "required": ["patchRef"]
+      }
     },
     {
       "if": {
@@ -71,6 +76,7 @@
       "then": {
         "properties": {
           "evidence": {
+            "type": "array",
             "not": {
               "contains": {
                 "type": "object",
