@@ -68,3 +68,7 @@
 ```
 
 返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`blockingEvidenceAbsent`、`baseCommitConsistent`、`humanApproval` 与最终的 `readyToMerge`。
+
+## 错误语义
+
+不存在的工具、缺失/非法的 `tools/call.params`、非字符串 `name`、非对象 `arguments`，以及服务未声明支持的 task-augmented 调用会返回 JSON-RPC `-32602` Protocol Error。已找到工具并开始执行后的可纠正输入或业务失败保留在 Tool Result 中，并设置 `isError: true`，便于 Agent 调整参数后重试。

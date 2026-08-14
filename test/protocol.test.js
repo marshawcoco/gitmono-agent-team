@@ -445,6 +445,7 @@ test("JSON-RPC notifications never produce responses", async (context) => {
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { jsonrpc: "2.0", method: "tools/list" },
     { jsonrpc: "2.0", method: "tools/call", params: { name: "unknown.tool", arguments: {} } },
+    { jsonrpc: "2.0", method: "tools/call", params: { name: "team.list_handoffs", arguments: null } },
     {
       jsonrpc: "2.0",
       method: "initialize",
@@ -614,7 +615,55 @@ test("the dispatcher enforces every advertised tool inputSchema", async (context
       method: "tools/call",
       params: { name: "team.list_handoffs", arguments: invalidArguments }
     }, dispatcher);
-    assert.equal(response.result.isError, true);
-    assert.match(response.result.structuredContent.error, /inputSchema/);
+    assert.equal(response.error.code, -32602);
+    assert.equal("result" in response, false);
   }
+});
+
+test("tools/call returns protocol errors for unknown tools and malformed requests", async () => {
+  const dispatcher = createDispatcher();
+  const call = (id, params) => handleRequest({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    ...(params === undefined ? {} : { params })
+  }, dispatcher);
+
+  const unknownTool = await call("unknown", { name: "unknown.tool", arguments: {} });
+  assert.equal(unknownTool.error.code, -32602);
+  assert.equal("result" in unknownTool, false);
+
+  const malformedParams = [
+    undefined,
+    null,
+    [],
+    "wrong",
+    {},
+    { name: 42 },
+    { name: "team.list_handoffs", arguments: null },
+    { name: "team.list_handoffs", arguments: [] },
+    { name: "team.list_handoffs", arguments: "wrong" },
+    { name: "team.list_handoffs", _meta: "wrong" },
+    { name: "team.list_handoffs", task: [] },
+    { name: "team.list_handoffs", task: {} }
+  ];
+  for (const params of malformedParams) {
+    const response = await call("malformed", params);
+    assert.equal(response.error.code, -32602);
+    assert.equal("result" in response, false);
+  }
+
+  const metadataCall = await call("metadata", {
+    name: "team.list_handoffs",
+    arguments: {},
+    _meta: { progressToken: "progress-1", extensionField: true }
+  });
+  assert.equal(metadataCall.result.isError, false);
+
+  const executionError = await call("execution", {
+    name: "team.get_task",
+    arguments: { agentId: "not-a-role" }
+  });
+  assert.equal(executionError.result.isError, true);
+  assert.equal("error" in executionError, false);
 });

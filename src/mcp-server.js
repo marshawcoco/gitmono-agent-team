@@ -123,6 +123,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     }
   }
 ]);
+const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((tool) => tool.name));
 
 const schemaValidator = new Ajv2020({ allErrors: true, strict: true });
 const TOOL_INPUT_VALIDATORS = new Map(
@@ -223,6 +224,32 @@ function requestResponse(request, payload) {
   return { jsonrpc: "2.0", id: request.id, ...payload };
 }
 
+function isJsonObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function invalidParams(request, message) {
+  return requestResponse(request, { error: { code: -32602, message } });
+}
+
+function validateCallToolParams(params) {
+  if (!isJsonObject(params)) return "tools/call params must be an object.";
+  if (typeof params.name !== "string") return "tools/call params.name must be a string.";
+  if (Object.prototype.hasOwnProperty.call(params, "arguments") && !isJsonObject(params.arguments)) {
+    return "tools/call params.arguments must be an object when present.";
+  }
+  if (Object.prototype.hasOwnProperty.call(params, "_meta") && !isJsonObject(params._meta)) {
+    return "tools/call params._meta must be an object when present.";
+  }
+  if (Object.prototype.hasOwnProperty.call(params, "task") && !isJsonObject(params.task)) {
+    return "tools/call params.task must be an object when present.";
+  }
+  if (Object.prototype.hasOwnProperty.call(params, "task")) {
+    return "Task-augmented tool calls are not supported.";
+  }
+  return undefined;
+}
+
 export async function handleRequest(request, dispatcher) {
   if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") {
     return { jsonrpc: "2.0", id: request?.id ?? null, error: { code: -32600, message: "Invalid JSON-RPC request." } };
@@ -262,12 +289,14 @@ export async function handleRequest(request, dispatcher) {
     return requestResponse(request, { result: { tools: TOOL_DEFINITIONS } });
   }
   if (request.method === "tools/call") {
+    const malformed = validateCallToolParams(request.params);
+    if (malformed) return invalidParams(request, malformed);
+    if (!TOOL_NAMES.has(request.params.name)) return invalidParams(request, "Unknown tool.");
     try {
-      const toolArguments = request.params
-        && Object.prototype.hasOwnProperty.call(request.params, "arguments")
+      const toolArguments = Object.prototype.hasOwnProperty.call(request.params, "arguments")
         ? request.params.arguments
         : {};
-      const result = await dispatcher.call(request.params?.name, toolArguments);
+      const result = await dispatcher.call(request.params.name, toolArguments);
       return requestResponse(request, { result: toolResult(result) });
     } catch (error) {
       return requestResponse(request, {
