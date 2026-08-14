@@ -1,0 +1,12 @@
+[submodule "submodules/mega"]
+	path = submodules/mega
+	url = https://github.com/gitmono-dev/mega.git
+	shallow = true
+[submodule "submodules/scorpiofs"]
+	path = submodules/scorpiofs
+	url = https://github.com/gitmono-dev/scorpiofs.git
+	shallow = true
+[submodule "submodules/libra"]
+	path = submodules/libra
+	url = https://github.com/libra-tools/libra.git
+	shallow = true

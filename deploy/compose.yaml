@@ -1,0 +1,169 @@
+name: ${COMPOSE_PROJECT_NAME:-gitmono-agent-infra}
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-mono}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-mono}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0-alpha.81
+    command:
+      - --address
+      - 0.0.0.0:9000
+      - --console-enable
+      - --access-key
+      - ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - --secret-key
+      - ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      - /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  init-rustfs-bucket:
+    image: alpine:3.20
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      BUCKET: ${MEGA_S3_BUCKET:-mega}
+      ENDPOINT: http://rustfs:9000
+      ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - ../submodules/mega/docker/demo/init-rustfs-bucket.sh:/opt/mega/init-rustfs-bucket.sh:ro
+    # Normalize the pinned upstream script because Windows Git checkouts may
+    # have converted it to CRLF, which is not executable in an Alpine shell.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        tr -d '\r' < /opt/mega/init-rustfs-bucket.sh > /tmp/init-rustfs-bucket.sh
+        exec /bin/sh /tmp/init-rustfs-bucket.sh
+    restart: "no"
+
+  mega:
+    image: ${MEGA_ENGINE_IMAGE:-public.ecr.aws/m8q5m4u3/mega/mono-engine@sha256:43cc0e9ccc7ec8e21990f850597dd60e321435b185fe9f6d3f2bf58ad8ae4472}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      init-rustfs-bucket:
+        condition: service_completed_successfully
+    environment:
+      MEGA_DATABASE__DB_TYPE: postgres
+      # Keep this as one URL-safe value. Interpolating raw credentials here
+      # would break whenever a username or password contains URL delimiters.
+      MEGA_DATABASE__DB_URL: ${MEGA_DATABASE_URL:?Set MEGA_DATABASE_URL to a percent-encoded PostgreSQL URL}
+      MEGA_REDIS__URL: redis://redis:6379
+      MEGA_OBJECT_STORAGE__STORAGE_TYPE: s3compatible
+      MEGA_OBJECT_STORAGE__S3__ENDPOINT_URL: http://rustfs:9000
+      MEGA_OBJECT_STORAGE__S3__BUCKET: ${MEGA_S3_BUCKET:-mega}
+      MEGA_OBJECT_STORAGE__S3__REGION: ${MEGA_S3_REGION:-us-east-1}
+      MEGA_OBJECT_STORAGE__S3__ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      MEGA_OBJECT_STORAGE__S3__SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      MEGA_MONOREPO__ADMIN: ${MEGA_MONOREPO__ADMIN:-admin}
+      MEGA_BUILD__ENABLE_BUILD: "false"
+      MEGA_BASE_DIR: /opt/mega
+      MEGA_CACHE_DIR: /opt/mega/cache
+      MEGA_LOG__LEVEL: ${MEGA_LOG_LEVEL:-info}
+      MEGA_LOG__PRINT_STD: "true"
+    # HTTP only: ScorpioFS does not require Mega's SSH, UI, Orion, or Campsite
+    # services. This also avoids the upstream demo's conflicting SSH port.
+    command:
+      - /usr/local/bin/mono
+      - service
+      - multi
+      - http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "${MEGA_BIND_ADDRESS:-127.0.0.1}:${MEGA_HOST_PORT:-8000}:8000"
+    volumes:
+      - mega-data:/opt/mega
+    healthcheck:
+      # The official runtime has bash but no curl/wget.
+      test: ["CMD-SHELL", "bash -lc 'echo > /dev/tcp/127.0.0.1/8000' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  scorpiofs:
+    image: ${SCORPIOFS_IMAGE:-gitmono/scorpiofs:local}
+    build:
+      context: ..
+      dockerfile: deploy/scorpiofs.Dockerfile
+    depends_on:
+      mega:
+        condition: service_healthy
+    environment:
+      SCORPIO_BASE_URL: ${SCORPIO_BASE_URL:-http://mega:8000}
+      SCORPIO_LFS_URL: ${SCORPIO_LFS_URL:-http://mega:8000/api/v1/lfs}
+      SCORPIO_LOG: ${SCORPIO_LOG:-info}
+    devices:
+      - "${SCORPIO_FUSE_DEVICE:-/dev/fuse}:/dev/fuse"
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    ports:
+      # The API is unauthenticated; keep it loopback-only by default.
+      - "${SCORPIO_BIND_ADDRESS:-127.0.0.1}:${SCORPIO_HOST_PORT:-2725}:2725"
+    volumes:
+      - scorpio-data:/var/lib/scorpiofs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:2725/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    init: true
+    stop_grace_period: 45s
+    restart: on-failure
+
+volumes:
+  postgres-data:
+  redis-data:
+  rustfs-data:
+  mega-data:
+  scorpio-data:
