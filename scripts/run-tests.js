@@ -4,7 +4,9 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const TEST_FILE_PATTERN = /\.test\.(?:c|m)?js$/;
+// Node 20 treats every JavaScript source under an explicitly selected `test/`
+// directory as a test file, regardless of its basename convention.
+const TEST_SOURCE_PATTERN = /\.(?:c|m)?js$/;
 const testRoot = fileURLToPath(new URL("../test/", import.meta.url));
 
 async function findTests(directory) {
@@ -14,7 +16,7 @@ async function findTests(directory) {
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) files.push(...await findTests(entryPath));
-    else if (entry.isFile() && TEST_FILE_PATTERN.test(entry.name)) files.push(entryPath);
+    else if (entry.isFile() && TEST_SOURCE_PATTERN.test(entry.name)) files.push(entryPath);
   }
 
   return files;
