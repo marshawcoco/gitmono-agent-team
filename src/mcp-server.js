@@ -118,7 +118,8 @@ export function createDispatcher({ stateDir = process.env.AGENT_TEAM_STATE_DIR ?
         }
         case "team.get_gate": {
           const handoffs = await readHandoffs(handoffFile);
-          return deriveGate({ handoffs, ...args });
+          const { intentId, risk, baseCommit } = args ?? {};
+          return deriveGate({ handoffs, intentId, risk, baseCommit });
         }
         default:
           throw protocolError(`Unknown MCP tool: ${name}`);
