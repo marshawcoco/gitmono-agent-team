@@ -51,7 +51,7 @@ test/                     协议与 MCP 调用测试
 1. `baseCommit` 是本轮协作的基线；任一 Agent 发现不一致必须阻塞交接。
 2. Implementer 只交付指定 `allowedPaths` 内的 PatchSet 和其自测；Verifier 不修改同一 PatchSet。
 3. Verifier 的 `passed` 交接必须包含通过的 `test` 证据；失败必须回传 Implementer。
-4. Integrator 的 `approved` 决定必须建立在实现、通过测试和通过审查三类证据之上。
+4. Integrator 的 `approved` 决定必须建立在同一 `patchRef` 的实现、通过测试和通过审查三类顺序证据之上；新 PatchSet 会使旧验证与旧审批失效。
 5. `risk: high` 永远需要 `human_approval` 证据，MCP 不会将其判为可合并。
 6. 每次交接都应写入可选的 Libra `sessionId` / `checkpointId`，使审计可追到 Think + Code 过程。
 

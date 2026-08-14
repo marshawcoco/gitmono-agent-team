@@ -36,6 +36,7 @@ await dispatcher.call("team.submit_handoff", {
   from: "integrator",
   to: "human",
   status: "approved",
+  patchRef: "refs/heads/agent/session-timeout",
   summary: "Evidence chain is complete for the medium-risk change.",
   evidence: [{ kind: "review", result: "approved", summary: "No path, baseline, or evidence conflict found" }]
 });

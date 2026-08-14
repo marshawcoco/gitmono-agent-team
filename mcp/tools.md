@@ -43,6 +43,8 @@
 | `verifier` | `passed` | `integrator` |
 | `integrator` | `approved` / `blocked` | `human` 或 `orchestrator` |
 
+正向证据链中的 Implementer `ready`、Verifier `passed` 与 Integrator `approved` 必须携带完全相同的 `patchRef`。每个阶段还必须追加在它所验证的前一阶段之后；新的 Implementer Handoff 会使旧验证与旧审批失效。
+
 ## `team.list_handoffs`
 
 按 Intent 查询已持久化记录。`intentId` 可选。
@@ -59,4 +61,4 @@
 { "intentId": "add-session-timeout", "risk": "medium" }
 ```
 
-返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`baseCommitConsistent`、`humanApproval` 与最终的 `readyToMerge`。
+返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`baseCommitConsistent`、`humanApproval` 与最终的 `readyToMerge`。

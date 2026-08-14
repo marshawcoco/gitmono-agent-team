@@ -42,6 +42,26 @@ test("a verifier cannot pass without passed test evidence", () => {
   assert.equal(validateHandoff(invalid).valid, false);
 });
 
+test("positive verifier and integrator handoffs require patchRef", () => {
+  const verifier = handoff({
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    patchRef: undefined,
+    evidence: [{ kind: "test", result: "passed", summary: "tests passed" }]
+  });
+  const integrator = handoff({
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: undefined,
+    evidence: [{ kind: "review", result: "approved", summary: "review passed" }]
+  });
+
+  assert.equal(validateHandoff(verifier).valid, false);
+  assert.equal(validateHandoff(integrator).valid, false);
+});
+
 test("the complete medium-risk evidence chain reaches the merge gate", () => {
   const implementation = handoff();
   const verification = handoff({
@@ -114,6 +134,82 @@ test("the MCP gate ignores caller-supplied handoffs", async (context) => {
   assert.equal(response.result.isError, false);
   assert.equal(response.result.structuredContent.handoffCount, 0);
   assert.equal(response.result.structuredContent.readyToMerge, false);
+});
+
+test("a new implementation invalidates earlier verification and approval", () => {
+  const implementationA = handoff({ patchRef: "refs/patchsets/session-timeout-a" });
+  const verificationA = handoff({
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    patchRef: implementationA.patchRef,
+    evidence: [{ kind: "test", result: "passed", summary: "patch A tests passed" }]
+  });
+  const integrationA = handoff({
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: implementationA.patchRef,
+    evidence: [{ kind: "review", result: "approved", summary: "patch A review passed" }]
+  });
+  const implementationB = handoff({
+    handoffId: "dbb1f9aa-1758-486b-983d-a8f82f6a093e",
+    patchRef: "refs/patchsets/session-timeout-b",
+    summary: "Delivered a revised PatchSet after the first review cycle."
+  });
+
+  const afterImplementationB = deriveGate({
+    handoffs: [implementationA, verificationA, integrationA, implementationB],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(afterImplementationB.verificationPassed, false);
+  assert.equal(afterImplementationB.reviewApproved, false);
+  assert.equal(afterImplementationB.readyToMerge, false);
+
+  const verificationB = handoff({
+    handoffId: "80181f2c-3fe2-48da-b41a-8cbfc7a8ee13",
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    patchRef: implementationB.patchRef,
+    evidence: [{ kind: "test", result: "passed", summary: "patch B tests passed" }]
+  });
+  const afterVerificationB = deriveGate({
+    handoffs: [implementationA, verificationA, integrationA, implementationB, verificationB],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(afterVerificationB.verificationPassed, true);
+  assert.equal(afterVerificationB.reviewApproved, false);
+  assert.equal(afterVerificationB.readyToMerge, false);
+
+  const integrationB = handoff({
+    handoffId: "72fd8ff0-c59b-4875-ab4a-624f4812c749",
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: implementationB.patchRef,
+    evidence: [{ kind: "review", result: "approved", summary: "patch B review passed" }]
+  });
+  const completePatchB = deriveGate({
+    handoffs: [implementationA, verificationA, integrationA, implementationB, verificationB, integrationB],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(completePatchB.patchRefConsistent, true);
+  assert.equal(completePatchB.readyToMerge, true);
+
+  const mismatchedChains = [
+    [implementationB, { ...verificationB, patchRef: implementationA.patchRef }, integrationB],
+    [implementationB, verificationB, { ...integrationB, patchRef: implementationA.patchRef }],
+    [implementationB, verificationB, { ...integrationB, patchRef: undefined }]
+  ];
+  for (const chain of mismatchedChains) {
+    const gate = deriveGate({ handoffs: chain, intentId: "add-session-timeout", risk: "medium" });
+    assert.equal(gate.patchRefConsistent, false);
+    assert.equal(gate.readyToMerge, false);
+  }
 });
 
 test("the MCP dispatcher persists a handoff and exposes tools", async (context) => {
