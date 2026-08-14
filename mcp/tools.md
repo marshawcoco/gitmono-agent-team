@@ -2,6 +2,8 @@
 
 `src/mcp-server.js` 是无依赖的 stdio MCP 服务。它将所有交接追加到工作目录的 `.agent-team/handoffs.jsonl`，不会启动模型、执行 shell 命令或合并代码。符合 JSON-RPC 的通知没有 `id`，服务会处理或忽略它们，但绝不会向 stdout 写 Response；带显式 `id: null` 的消息仍是请求并会收到响应。
 
+当前服务明确实现 legacy MCP `2025-11-25`：`initialize` 只会协商并返回这个版本，绝不会原样声明未实现的客户端版本。`server/discover` 返回标准的 Method not found，供支持双时代协商的客户端识别为 legacy 服务并按需降级。MCP `2026-07-28` 的无握手、每请求元数据模式尚未实现。
+
 ## `team.get_task`
 
 读取角色的固定职责、输入、输出和允许交接路线。
