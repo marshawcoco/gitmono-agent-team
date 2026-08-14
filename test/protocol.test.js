@@ -166,6 +166,7 @@ test("the complete medium-risk evidence chain reaches the merge gate", () => {
   });
 
   const gate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "medium" });
+  assert.equal(gate.integrationPrerequisitesMet, true);
   assert.equal(gate.readyToMerge, true);
   assert.equal(deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "high" }).readyToMerge, false);
 
@@ -249,6 +250,7 @@ test("a new implementation invalidates earlier verification and approval", () =>
   });
   assert.equal(afterImplementationB.verificationPassed, false);
   assert.equal(afterImplementationB.reviewApproved, false);
+  assert.equal(afterImplementationB.integrationPrerequisitesMet, false);
   assert.equal(afterImplementationB.readyToMerge, false);
 
   const verificationB = handoff({
@@ -266,6 +268,7 @@ test("a new implementation invalidates earlier verification and approval", () =>
   });
   assert.equal(afterVerificationB.verificationPassed, true);
   assert.equal(afterVerificationB.reviewApproved, false);
+  assert.equal(afterVerificationB.integrationPrerequisitesMet, true);
   assert.equal(afterVerificationB.readyToMerge, false);
 
   const integrationB = handoff({
@@ -416,6 +419,125 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   assert.equal(mediumRiskVetoGate.readyToMerge, false);
 });
 
+test("integration preflight is ready before the Integrator submits a decision", () => {
+  const implementation = handoff();
+  const verification = handoff({
+    handoffId: "4495ce38-3d13-47b6-a89f-e410d2bdbf5b",
+    taskId: "verify-session-timeout",
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    summary: "Independent acceptance and regression checks passed.",
+    evidence: [{ kind: "test", result: "passed", summary: "18 tests passed" }]
+  });
+
+  const preflight = deriveGate({
+    handoffs: [implementation, verification],
+    intentId: "add-session-timeout",
+    risk: "medium",
+    baseCommit: implementation.baseCommit
+  });
+
+  assert.equal(preflight.integrationPrerequisitesMet, true);
+  assert.equal(preflight.reviewApproved, false);
+  assert.equal(preflight.readyToMerge, false);
+
+  const highRiskPreflight = deriveGate({
+    handoffs: [implementation, verification],
+    intentId: "add-session-timeout",
+    risk: "high",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(highRiskPreflight.integrationPrerequisitesMet, true);
+  assert.equal(highRiskPreflight.humanApproval, false);
+  assert.equal(highRiskPreflight.readyToMerge, false);
+
+  const mismatchedPatch = deriveGate({
+    handoffs: [implementation, { ...verification, patchRef: "refs/heads/agent/other-patch" }],
+    intentId: "add-session-timeout",
+    risk: "medium",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(mismatchedPatch.patchRefConsistent, false);
+  assert.equal(mismatchedPatch.integrationPrerequisitesMet, false);
+
+  const blockingEvidence = deriveGate({
+    handoffs: [implementation, {
+      ...verification,
+      evidence: [
+        ...verification.evidence,
+        { kind: "security", result: "failed", summary: "security scan failed" }
+      ]
+    }],
+    intentId: "add-session-timeout",
+    risk: "medium",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(blockingEvidence.blockingEvidenceAbsent, false);
+  assert.equal(blockingEvidence.integrationPrerequisitesMet, false);
+
+  const mismatchedBase = deriveGate({
+    handoffs: [implementation, { ...verification, baseCommit: "deadbee" }],
+    intentId: "add-session-timeout",
+    risk: "medium",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(mismatchedBase.baseCommitConsistent, false);
+  assert.equal(mismatchedBase.integrationPrerequisitesMet, false);
+
+  const blockedIntegration = handoff({
+    handoffId: "d563b9ea-ddce-4c15-bab6-9411f0375ff2",
+    taskId: "integrate-session-timeout",
+    from: "integrator",
+    to: "human",
+    status: "blocked",
+    patchRef: undefined,
+    summary: "Integration is waiting for independently obtained human approval.",
+    evidence: [{ kind: "finding", result: "info", summary: "Human approval is not yet available" }]
+  });
+  const afterBlockedDecision = deriveGate({
+    handoffs: [implementation, verification, blockedIntegration],
+    intentId: "add-session-timeout",
+    risk: "high",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(afterBlockedDecision.integrationPrerequisitesMet, true);
+  assert.equal(afterBlockedDecision.patchRefConsistent, false);
+  assert.equal(afterBlockedDecision.blockingEvidenceAbsent, true);
+  assert.equal(afterBlockedDecision.readyToMerge, false);
+
+  const resumedApproval = handoff({
+    handoffId: "73a84206-ce97-4f12-913b-4b19dac3ef42",
+    taskId: "integrate-session-timeout",
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    patchRef: implementation.patchRef,
+    summary: "Integration resumed after independent human approval became available.",
+    evidence: [
+      { kind: "review", result: "approved", summary: "No integration conflict found" },
+      { kind: "human_approval", result: "approved", summary: "Change manager approved the rollout" }
+    ]
+  });
+  const afterResumedApproval = deriveGate({
+    handoffs: [implementation, verification, blockedIntegration, resumedApproval],
+    intentId: "add-session-timeout",
+    risk: "high",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(afterResumedApproval.integrationPrerequisitesMet, true);
+  assert.equal(afterResumedApproval.readyToMerge, true);
+
+  const incomplete = deriveGate({
+    handoffs: [implementation],
+    intentId: "add-session-timeout",
+    risk: "medium",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(incomplete.integrationPrerequisitesMet, false);
+  assert.equal(incomplete.readyToMerge, false);
+});
+
 test("the MCP dispatcher persists a handoff and exposes tools", async (context) => {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "gitmono-team-test-"));
   context.after(() => rm(stateDir, { recursive: true, force: true }));
@@ -431,8 +553,43 @@ test("the MCP dispatcher persists a handoff and exposes tools", async (context) 
 
   const saved = await dispatcher.call("team.submit_handoff", handoff({ handoffId: undefined, createdAt: undefined }));
   assert.equal(saved.accepted, true);
+  await dispatcher.call("team.submit_handoff", handoff({
+    handoffId: undefined,
+    createdAt: undefined,
+    taskId: "verify-session-timeout",
+    from: "verifier",
+    to: "integrator",
+    status: "passed",
+    summary: "Independent acceptance and regression checks passed.",
+    evidence: [{ kind: "test", result: "passed", summary: "18 tests passed" }]
+  }));
+
+  const preflight = await dispatcher.call("team.get_gate", {
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(preflight.integrationPrerequisitesMet, true);
+  assert.equal(preflight.readyToMerge, false);
+
+  await dispatcher.call("team.submit_handoff", handoff({
+    handoffId: undefined,
+    createdAt: undefined,
+    taskId: "integrate-session-timeout",
+    from: "integrator",
+    to: "human",
+    status: "approved",
+    summary: "Review is complete and the evidence chain is consistent.",
+    evidence: [{ kind: "review", result: "approved", summary: "No integration conflict found" }]
+  }));
+
+  const postflight = await dispatcher.call("team.get_gate", {
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(postflight.readyToMerge, true);
+
   const listed = await dispatcher.call("team.list_handoffs", { intentId: "add-session-timeout" });
-  assert.equal(listed.count, 1);
+  assert.equal(listed.count, 3);
   assert.equal(listed.handoffs[0].handoffId.length > 0, true);
 });
 

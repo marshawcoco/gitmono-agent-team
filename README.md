@@ -36,7 +36,7 @@
 
 4. 复制 [examples/intent-spec.example.json](examples/intent-spec.example.json)，为一次工作创建 IntentSpec。将同一文件、同一 `baseCommit` 交给三个 Agent。
 
-5. 按以下顺序交接：Implementer → Verifier → Integrator。每次交接由 `team.submit_handoff` 写入 `.agent-team/handoffs.jsonl`；集成前调用 `team.get_gate`。
+5. 按以下顺序交接：Implementer → Verifier → Integrator。每次交接由 `team.submit_handoff` 写入 `.agent-team/handoffs.jsonl`；Integrator 审查前调用 `team.get_gate` 做前置条件预检，提交批准后再次调用并以 `readyToMerge` 作为最终门禁。
 
    ```powershell
    npm test
