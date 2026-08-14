@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { createDispatcher, handleRequest } from "../src/mcp-server.js";
+import { createDispatcher, handleRequest, TOOL_DEFINITIONS } from "../src/mcp-server.js";
 import { deriveGate, validateHandoff, validateIntentSpec } from "../src/protocol.js";
 
 const intentPath = new URL("../examples/intent-spec.example.json", import.meta.url);
@@ -168,16 +168,44 @@ test("the complete medium-risk evidence chain reaches the merge gate", () => {
   const gate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "medium" });
   assert.equal(gate.integrationPrerequisitesMet, true);
   assert.equal(gate.readyToMerge, true);
-  assert.equal(deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "high" }).readyToMerge, false);
+  const highRiskGate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "high" });
+  assert.equal(highRiskGate.humanApproval, false);
+  assert.equal(highRiskGate.externalHumanApprovalRequired, true);
+  assert.equal(highRiskGate.readyToMerge, false);
 
-  const approvedHighRisk = {
+  const claimedHighRiskApproval = {
     ...integration,
     evidence: [
       ...integration.evidence,
       { kind: "human_approval", result: "approved", summary: "Change manager approved the high-risk rollout" }
     ]
   };
-  assert.equal(deriveGate({ handoffs: [implementation, verification, approvedHighRisk], intentId: "add-session-timeout", risk: "high" }).readyToMerge, true);
+  const claimedGate = deriveGate({
+    handoffs: [implementation, verification, claimedHighRiskApproval],
+    intentId: "add-session-timeout",
+    risk: "high"
+  });
+  assert.equal(claimedGate.externalHumanApprovalRequired, true);
+  assert.equal(claimedGate.readyToMerge, false);
+  const legacyMediumGate = deriveGate({
+    handoffs: [implementation, verification, claimedHighRiskApproval],
+    intentId: "add-session-timeout",
+    risk: "medium"
+  });
+  assert.equal(legacyMediumGate.externalHumanApprovalRequired, false);
+  assert.equal(legacyMediumGate.readyToMerge, true);
+  assert.deepEqual(validateHandoff(claimedHighRiskApproval), {
+    valid: false,
+    errors: ["Agent Handoffs cannot assert human approval; high-risk approval is external."]
+  });
+});
+
+test("the Handoff contract excludes Agent-authored human approval", async () => {
+  const schemaPath = new URL("../contracts/handoff.schema.json", import.meta.url);
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  assert.equal(schema.properties.evidence.items.properties.kind.enum.includes("human_approval"), false);
+  const submitTool = TOOL_DEFINITIONS.find((tool) => tool.name === "team.submit_handoff");
+  assert.equal(submitTool.inputSchema.properties.evidence.items.properties.kind.enum.includes("human_approval"), false);
 });
 
 test("the MCP gate ignores caller-supplied handoffs", async (context) => {
@@ -506,27 +534,38 @@ test("integration preflight is ready before the Integrator submits a decision", 
   assert.equal(afterBlockedDecision.blockingEvidenceAbsent, true);
   assert.equal(afterBlockedDecision.readyToMerge, false);
 
-  const resumedApproval = handoff({
+  const resumedReview = handoff({
     handoffId: "73a84206-ce97-4f12-913b-4b19dac3ef42",
     taskId: "integrate-session-timeout",
     from: "integrator",
     to: "human",
     status: "approved",
     patchRef: implementation.patchRef,
-    summary: "Integration resumed after independent human approval became available.",
-    evidence: [
-      { kind: "review", result: "approved", summary: "No integration conflict found" },
-      { kind: "human_approval", result: "approved", summary: "Change manager approved the rollout" }
-    ]
+    summary: "Integration review resumed before the external human gate runs.",
+    evidence: [{ kind: "review", result: "approved", summary: "No integration conflict found" }]
   });
-  const afterResumedApproval = deriveGate({
-    handoffs: [implementation, verification, blockedIntegration, resumedApproval],
+  const afterResumedReview = deriveGate({
+    handoffs: [implementation, verification, blockedIntegration, resumedReview],
     intentId: "add-session-timeout",
     risk: "high",
     baseCommit: implementation.baseCommit
   });
-  assert.equal(afterResumedApproval.integrationPrerequisitesMet, true);
-  assert.equal(afterResumedApproval.readyToMerge, true);
+  assert.equal(afterResumedReview.integrationPrerequisitesMet, true);
+  assert.equal(afterResumedReview.reviewApproved, true);
+  assert.equal(afterResumedReview.patchRefConsistent, true);
+  assert.equal(afterResumedReview.blockingEvidenceAbsent, true);
+  assert.equal(afterResumedReview.baseCommitConsistent, true);
+  assert.equal(afterResumedReview.externalHumanApprovalRequired, true);
+  assert.equal(afterResumedReview.readyToMerge, false);
+
+  const resumedMediumRisk = deriveGate({
+    handoffs: [implementation, verification, blockedIntegration, resumedReview],
+    intentId: "add-session-timeout",
+    risk: "medium",
+    baseCommit: implementation.baseCommit
+  });
+  assert.equal(resumedMediumRisk.integrationPrerequisitesMet, true);
+  assert.equal(resumedMediumRisk.readyToMerge, true);
 
   const incomplete = deriveGate({
     handoffs: [implementation],
@@ -738,6 +777,18 @@ test("the dispatcher enforces every advertised tool inputSchema", async (context
         summary: "tests passed",
         unexpected: "must not be persisted"
       }]
+    })],
+    ["team.submit_handoff", handoff({
+      handoffId: undefined,
+      createdAt: undefined,
+      taskId: "integrate-session-timeout",
+      from: "integrator",
+      to: "human",
+      status: "approved",
+      evidence: [
+        { kind: "review", result: "approved", summary: "review passed" },
+        { kind: "human_approval", result: "approved", summary: "self-asserted approval" }
+      ]
     })]
   ];
 

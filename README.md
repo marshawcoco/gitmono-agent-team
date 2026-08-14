@@ -36,7 +36,7 @@
 
 4. 复制 [examples/intent-spec.example.json](examples/intent-spec.example.json)，为一次工作创建 IntentSpec。将同一文件、同一 `baseCommit` 交给三个 Agent。
 
-5. 按以下顺序交接：Implementer → Verifier → Integrator。每次交接由 `team.submit_handoff` 写入 `.agent-team/handoffs.jsonl`；Integrator 审查前调用 `team.get_gate` 做前置条件预检，提交批准后再次调用并以 `readyToMerge` 作为最终门禁。
+5. 按以下顺序交接：Implementer → Verifier → Integrator。每次交接由 `team.submit_handoff` 写入 `.agent-team/handoffs.jsonl`；Integrator 审查前调用 `team.get_gate` 做前置条件预检。提交批准后再次调用：低/中风险以 `readyToMerge` 作为最终门禁，高风险则交由 MCP 外部授权人工门禁完成最终决定。
 
    ```powershell
    npm test
@@ -64,7 +64,7 @@ test/                     协议与 MCP 调用测试
 2. Implementer 只交付指定 `allowedPaths` 内的 PatchSet 和其自测；Verifier 不修改同一 PatchSet。
 3. Verifier 的 `passed` 交接必须包含通过的 `test` 证据；失败必须回传 Implementer。
 4. Integrator 的 `approved` 决定必须建立在同一 `patchRef` 的实现、通过测试和通过审查三类顺序证据之上；新 PatchSet 会使旧验证与旧审批失效。
-5. `risk: high` 永远需要 `human_approval` 证据，MCP 不会将其判为可合并。
+5. `risk: high` 永远由外部授权的人工门禁决定；Agent Handoff 不能自报 `human_approval`，本地 MCP 始终返回 `readyToMerge: false` 与 `externalHumanApprovalRequired: true`。外部门禁必须独立读取 IntentSpec 并核对精确的风险、基线及非人工门禁字段。
 6. 每次交接都应写入可选的 Libra `sessionId` / `checkpointId`，使审计可追到 Think + Code 过程。
 7. `ready`、`passed`、`approved` 等正向交接不得夹带任何 `failed` / `rejected` 证据；发现矛盾时必须失败关闭门禁。
 

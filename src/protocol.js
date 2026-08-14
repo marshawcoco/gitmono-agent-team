@@ -25,7 +25,7 @@ const SHA_PATTERN = /^[a-f0-9]{7,64}$/;
 const ID_PATTERN = /^[a-z][a-z0-9-]{2,63}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RISK_LEVELS = new Set(["low", "medium", "high"]);
-const EVIDENCE_KINDS = new Set(["build", "test", "review", "security", "human_approval", "finding"]);
+const EVIDENCE_KINDS = new Set(["build", "test", "review", "security", "finding"]);
 const EVIDENCE_RESULTS = new Set(["passed", "failed", "approved", "rejected", "not_run", "info"]);
 const POSITIVE_HANDOFF_STATUSES = new Set(["ready", "passed", "approved"]);
 const BLOCKING_EVIDENCE_RESULTS = new Set(["failed", "rejected"]);
@@ -149,6 +149,10 @@ export function validateHandoff(handoff) {
     errors.push("evidence must contain at least one item.");
   } else {
     for (const item of handoff.evidence) {
+      if (isObject(item) && item.kind === "human_approval") {
+        errors.push("Agent Handoffs cannot assert human approval; high-risk approval is external.");
+        break;
+      }
       if (!isObject(item) || !EVIDENCE_KINDS.has(item.kind) || !EVIDENCE_RESULTS.has(item.result) || !hasNonBlankString(item.summary)) {
         errors.push("Each evidence item needs a known kind, result, and summary.");
         break;
@@ -230,11 +234,6 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   const patchRefConsistent = relevantHandoffs.length >= 2
     && hasNonBlankString(implementation?.patchRef)
     && relevantHandoffs.every((handoff) => handoff.patchRef === implementation.patchRef);
-  const humanApproval = risk !== "high" || (
-    integration?.status === "approved"
-    && hasEvidence(integration, "human_approval", "approved")
-    && !hasBlockingEvidence(integration, "human_approval")
-  );
   const integrationPrerequisitesMet = Boolean(
     implementerDelivered
       && verificationPassed
@@ -243,6 +242,10 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
       && preflightBlockingEvidenceAbsent
       && preflightBaseCommitConsistent
   );
+  // Agent-authored evidence is not a trusted human identity. High-risk changes
+  // therefore remain closed here and must pass an external authorized gate.
+  const externalHumanApprovalRequired = risk === "high";
+  const humanApproval = !externalHumanApprovalRequired;
   const readyToMerge = Boolean(
     integrationPrerequisitesMet
       && reviewApproved
@@ -266,6 +269,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
     baseCommitConsistent,
     humanApproval,
     integrationPrerequisitesMet,
+    externalHumanApprovalRequired,
     readyToMerge
   };
 }
