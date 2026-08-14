@@ -54,6 +54,7 @@ test/                     协议与 MCP 调用测试
 4. Integrator 的 `approved` 决定必须建立在同一 `patchRef` 的实现、通过测试和通过审查三类顺序证据之上；新 PatchSet 会使旧验证与旧审批失效。
 5. `risk: high` 永远需要 `human_approval` 证据，MCP 不会将其判为可合并。
 6. 每次交接都应写入可选的 Libra `sessionId` / `checkpointId`，使审计可追到 Think + Code 过程。
+7. `ready`、`passed`、`approved` 等正向交接不得夹带任何 `failed` / `rejected` 证据；发现矛盾时必须失败关闭门禁。
 
 ## MCP 工具
 

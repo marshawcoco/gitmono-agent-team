@@ -47,6 +47,24 @@ export const TOOL_DEFINITIONS = Object.freeze([
           ]
         },
         then: { required: ["patchRef"] }
+      }, {
+        if: {
+          properties: { status: { enum: ["ready", "passed", "approved"] } },
+          required: ["status"]
+        },
+        then: {
+          properties: {
+            evidence: {
+              not: {
+                contains: {
+                  type: "object",
+                  properties: { result: { enum: ["failed", "rejected"] } },
+                  required: ["result"]
+                }
+              }
+            }
+          }
+        }
       }]
     }
   },
