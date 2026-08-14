@@ -6,9 +6,16 @@
   "type": "module",
   "scripts": {
     "demo": "node src/demo.js",
-    "test": "node scripts/run-tests.js"
+    "demo:check": "node scripts/verify-demo.js",
+    "test": "node scripts/run-tests.js",
+    "test:contracts": "node --test test/contracts.test.js",
+    "test:coverage": "node scripts/run-tests.js --experimental-test-coverage --test-coverage-lines=85 --test-coverage-functions=80 --test-coverage-branches=65"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   }
 }
