@@ -1,3 +1,4 @@
 node_modules/
 .agent-team/
 coverage/
+deploy/.env

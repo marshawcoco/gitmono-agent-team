@@ -6,6 +6,8 @@
 - **Verifier（验证）**：独立复跑验收、记录失败原因或通过证据，不能绕过测试结论。
 - **Integrator（集成）**：检查基线、路径冲突、审查结论和风险门禁；只提交“允许合并”的决定，不直接替代人工审批。
 
+仓库以 Git submodule 固定 Mega、ScorpioFS 和 Libra 的上游版本，并提供 [Mega + ScorpioFS Docker Compose](deploy/README.md) 用于本地部署。
+
 架构遵循 GitMono 方案中的链路：**IntentSpec → Task → PatchSet → Evidence → Decision**。Libra 保存会话、checkpoint 与版本化证据；本仓库的 `team-protocol` MCP 只负责角色间的结构化交接和合并门禁。
 
 ## 快速开始
@@ -39,6 +41,8 @@ mcp/                      MCP 客户端配置模板与工具契约
 src/mcp-server.js         无外部依赖的 stdio MCP 服务
 src/protocol.js           校验、路由与合并门禁逻辑
 examples/                 可复制的 IntentSpec / Handoff 样例
+deploy/                   Mega + ScorpioFS Compose 与安装说明
+submodules/               固定版本的 Mega、ScorpioFS、Libra 上游仓库
 test/                     协议与 MCP 调用测试
 ```
 
