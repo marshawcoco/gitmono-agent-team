@@ -440,8 +440,28 @@ test("JSON-RPC notifications never produce responses", async (context) => {
   const dispatcher = createDispatcher({ stateDir });
   const notifications = [
     { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
     { jsonrpc: "2.0", method: "tools/list" },
-    { jsonrpc: "2.0", method: "tools/call", params: { name: "unknown.tool", arguments: {} } }
+    { jsonrpc: "2.0", method: "tools/call", params: { name: "unknown.tool", arguments: {} } },
+    {
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "notification-test", version: "1.0.0" }
+      }
+    },
+    {
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        protocolVersion: null,
+        capabilities: {},
+        clientInfo: { name: "notification-test", version: "1.0.0" }
+      }
+    },
+    { jsonrpc: "2.0", method: "initialize" }
   ];
 
   for (const notification of notifications) {
@@ -464,6 +484,28 @@ test("JSON-RPC notifications never produce responses", async (context) => {
   assert.equal(nullIdNotificationMethod.id, null);
   assert.equal(nullIdNotificationMethod.error.code, -32600);
 
+  const nullIdInitialize = await handleRequest({
+    jsonrpc: "2.0",
+    id: null,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "request-test", version: "1.0.0" }
+    }
+  }, dispatcher);
+  assert.equal(nullIdInitialize.id, null);
+  assert.equal(nullIdInitialize.result.protocolVersion, "2025-11-25");
+
+  const nullIdInvalidInitialize = await handleRequest({
+    jsonrpc: "2.0",
+    id: null,
+    method: "initialize",
+    params: { protocolVersion: null }
+  }, dispatcher);
+  assert.equal(nullIdInvalidInitialize.id, null);
+  assert.equal(nullIdInvalidInitialize.error.code, -32602);
+
   const wireResponses = await runMcpServer([
     ...notifications,
     { jsonrpc: "2.0", id: 7, method: "tools/list" }
@@ -471,4 +513,38 @@ test("JSON-RPC notifications never produce responses", async (context) => {
   assert.equal(wireResponses.length, 1);
   assert.equal(wireResponses[0].id, 7);
   assert.ok(Array.isArray(wireResponses[0].result.tools));
+});
+
+test("initialize negotiates only the supported legacy MCP version", async () => {
+  const dispatcher = createDispatcher();
+  const initialize = (id, protocolVersion) => handleRequest({
+    jsonrpc: "2.0",
+    id,
+    method: "initialize",
+    params: {
+      protocolVersion,
+      capabilities: {},
+      clientInfo: { name: "protocol-test", version: "1.0.0" }
+    }
+  }, dispatcher);
+
+  for (const requestedVersion of ["2025-11-25", "2026-07-28", "2099-01-01"]) {
+    const response = await initialize(requestedVersion, requestedVersion);
+    assert.equal(response.id, requestedVersion);
+    assert.equal(response.result.protocolVersion, "2025-11-25");
+  }
+
+  for (const invalidVersion of [undefined, null, 20251125, " "]) {
+    const response = await initialize("invalid-version", invalidVersion);
+    assert.equal(response.error.code, -32602);
+    assert.deepEqual(response.error.data.supported, ["2025-11-25"]);
+  }
+
+  const discovery = await handleRequest({
+    jsonrpc: "2.0",
+    id: "discover",
+    method: "server/discover",
+    params: {}
+  }, dispatcher);
+  assert.equal(discovery.error.code, -32601);
 });

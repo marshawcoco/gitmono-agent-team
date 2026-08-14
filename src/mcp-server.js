@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { AGENT_IDS, ROLE_TASKS, deriveGate, validateHandoff } from "./protocol.js";
 
+export const SUPPORTED_MCP_PROTOCOL_VERSIONS = Object.freeze(["2025-11-25"]);
+const DEFAULT_MCP_PROTOCOL_VERSION = SUPPORTED_MCP_PROTOCOL_VERSIONS.at(-1);
+
 export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: "team.get_task",
@@ -180,9 +183,25 @@ export async function handleRequest(request, dispatcher) {
   }
 
   if (request.method === "initialize") {
+    const requestedVersion = request.params?.protocolVersion;
+    if (typeof requestedVersion !== "string" || requestedVersion.trim().length === 0) {
+      return requestResponse(request, {
+        error: {
+          code: -32602,
+          message: "initialize requires a protocolVersion string.",
+          data: {
+            supported: SUPPORTED_MCP_PROTOCOL_VERSIONS,
+            requested: requestedVersion ?? null
+          }
+        }
+      });
+    }
+    const protocolVersion = SUPPORTED_MCP_PROTOCOL_VERSIONS.includes(requestedVersion)
+      ? requestedVersion
+      : DEFAULT_MCP_PROTOCOL_VERSION;
     return requestResponse(request, {
       result: {
-        protocolVersion: request.params?.protocolVersion ?? "2025-03-26",
+        protocolVersion,
         capabilities: { tools: {} },
         serverInfo: { name: "gitmono-team-protocol", version: "0.1.0" }
       }
