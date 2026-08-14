@@ -34,13 +34,8 @@ sed \
   -e 's|^FROM rust:slim-bookworm AS build$|FROM rust@sha256:2775a09d208ff0d7c1f50490c45b62db929e87ba1dcbc3f2132ac71a704bcdd3 AS build|' \
   -e 's|^FROM debian:bookworm-slim AS runtime$|FROM debian@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS runtime|' \
   deploy/scorpiofs.Dockerfile > "$pinned_dockerfile"
-# The pinned ScorpioFS revision transitively runs bindgen while compiling
-# RocksDB. Its upstream Dockerfile omits libclang, so add it only to the
-# ephemeral CI build definition without changing the deployment artifact.
-sed -i '/^[[:space:]]*pkg-config \\$/a\        libclang-dev \\' "$pinned_dockerfile"
 grep -Fx 'FROM rust@sha256:2775a09d208ff0d7c1f50490c45b62db929e87ba1dcbc3f2132ac71a704bcdd3 AS build' "$pinned_dockerfile" >/dev/null
 grep -Fx 'FROM debian@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS runtime' "$pinned_dockerfile" >/dev/null
-grep -Fx '        libclang-dev \' "$pinned_dockerfile" >/dev/null
 
 compose=(docker compose --env-file deploy/.env.example -f deploy/compose.yaml -f "$compose_override")
 
