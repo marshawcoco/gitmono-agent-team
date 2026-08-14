@@ -188,10 +188,11 @@ function latestByRoleAfter(handoffs, role, afterIndex = -1) {
   return undefined;
 }
 
-export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } = {}) {
+export function deriveGate({ handoffs, intentId, risk, baseCommit } = {}) {
   if (!Array.isArray(handoffs)) throw new TypeError("handoffs must be an array.");
   if (!ID_PATTERN.test(intentId ?? "")) throw new TypeError("intentId must be a lowercase kebab-case identifier.");
   if (!RISK_LEVELS.has(risk)) throw new TypeError("risk must be low, medium, or high.");
+  if (!SHA_PATTERN.test(baseCommit ?? "")) throw new TypeError("baseCommit must be a Git commit SHA.");
 
   const chain = handoffs.filter((handoff) => handoff.intentId === intentId);
   // Each stage must have been appended after the stage it evaluates. A newer
@@ -207,7 +208,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   const implementation = implementationEntry?.handoff;
   const verification = verificationEntry?.handoff;
   const integration = integrationEntry?.handoff;
-  const expectedBase = baseCommit ?? implementation?.baseCommit;
+  const expectedBase = baseCommit;
   const preflightHandoffs = [implementation, verification].filter(Boolean);
   const relevantHandoffs = [implementation, verification, integration].filter(Boolean);
 
@@ -259,7 +260,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
     intentId,
     risk,
     handoffCount: chain.length,
-    expectedBaseCommit: expectedBase ?? null,
+    expectedBaseCommit: expectedBase,
     implementerDelivered,
     verificationPassed,
     testEvidencePassed,

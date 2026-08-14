@@ -165,14 +165,13 @@ test("the complete medium-risk evidence chain reaches the merge gate", () => {
     evidence: [{ kind: "review", result: "approved", summary: "No integration conflict found" }]
   });
 
-  const gate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "medium" });
+  const gate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "medium", baseCommit: intent.target.baseCommit });
   assert.equal(gate.integrationPrerequisitesMet, true);
   assert.equal(gate.readyToMerge, true);
-  const highRiskGate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "high" });
+  const highRiskGate = deriveGate({ handoffs: [implementation, verification, integration], intentId: "add-session-timeout", risk: "high", baseCommit: intent.target.baseCommit });
   assert.equal(highRiskGate.humanApproval, false);
   assert.equal(highRiskGate.externalHumanApprovalRequired, true);
   assert.equal(highRiskGate.readyToMerge, false);
-
   const claimedHighRiskApproval = {
     ...integration,
     evidence: [
@@ -183,14 +182,16 @@ test("the complete medium-risk evidence chain reaches the merge gate", () => {
   const claimedGate = deriveGate({
     handoffs: [implementation, verification, claimedHighRiskApproval],
     intentId: "add-session-timeout",
-    risk: "high"
+    risk: "high",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(claimedGate.externalHumanApprovalRequired, true);
   assert.equal(claimedGate.readyToMerge, false);
   const legacyMediumGate = deriveGate({
     handoffs: [implementation, verification, claimedHighRiskApproval],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(legacyMediumGate.externalHumanApprovalRequired, false);
   assert.equal(legacyMediumGate.readyToMerge, true);
@@ -237,6 +238,7 @@ test("the MCP gate ignores caller-supplied handoffs", async (context) => {
       arguments: {
         intentId: "add-session-timeout",
         risk: "medium",
+        baseCommit: "a5bf591",
         handoffs: forgedHandoffs
       }
     }
@@ -274,7 +276,8 @@ test("a new implementation invalidates earlier verification and approval", () =>
   const afterImplementationB = deriveGate({
     handoffs: [implementationA, verificationA, integrationA, implementationB],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementationB.baseCommit
   });
   assert.equal(afterImplementationB.verificationPassed, false);
   assert.equal(afterImplementationB.reviewApproved, false);
@@ -292,7 +295,8 @@ test("a new implementation invalidates earlier verification and approval", () =>
   const afterVerificationB = deriveGate({
     handoffs: [implementationA, verificationA, integrationA, implementationB, verificationB],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementationB.baseCommit
   });
   assert.equal(afterVerificationB.verificationPassed, true);
   assert.equal(afterVerificationB.reviewApproved, false);
@@ -310,7 +314,8 @@ test("a new implementation invalidates earlier verification and approval", () =>
   const completePatchB = deriveGate({
     handoffs: [implementationA, verificationA, integrationA, implementationB, verificationB, integrationB],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementationB.baseCommit
   });
   assert.equal(completePatchB.patchRefConsistent, true);
   assert.equal(completePatchB.readyToMerge, true);
@@ -321,7 +326,7 @@ test("a new implementation invalidates earlier verification and approval", () =>
     [implementationB, verificationB, { ...integrationB, patchRef: undefined }]
   ];
   for (const chain of mismatchedChains) {
-    const gate = deriveGate({ handoffs: chain, intentId: "add-session-timeout", risk: "medium" });
+    const gate = deriveGate({ handoffs: chain, intentId: "add-session-timeout", risk: "medium", baseCommit: implementationB.baseCommit });
     assert.equal(gate.patchRefConsistent, false);
     assert.equal(gate.readyToMerge, false);
   }
@@ -363,7 +368,8 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   const failedImplementationGate = deriveGate({
     handoffs: [failedImplementation, cleanVerificationForImplementation, integration],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(failedImplementationGate.blockingEvidenceAbsent, false);
   assert.equal(failedImplementationGate.readyToMerge, false);
@@ -371,7 +377,8 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   const failedTestGate = deriveGate({
     handoffs: [implementation, verification, integration],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(failedTestGate.testEvidencePassed, false);
   assert.equal(failedTestGate.blockingEvidenceAbsent, false);
@@ -387,7 +394,8 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   const securityVetoGate = deriveGate({
     handoffs: [implementation, securityFailedVerification, integration],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(securityVetoGate.testEvidencePassed, true);
   assert.equal(securityVetoGate.blockingEvidenceAbsent, false);
@@ -407,7 +415,8 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   const rejectedReviewGate = deriveGate({
     handoffs: [implementation, cleanVerification, rejectedReview],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(rejectedReviewGate.reviewApproved, false);
   assert.equal(rejectedReviewGate.blockingEvidenceAbsent, false);
@@ -424,7 +433,8 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   const disputedApprovalGate = deriveGate({
     handoffs: [implementation, cleanVerification, disputedHumanApproval],
     intentId: "add-session-timeout",
-    risk: "high"
+    risk: "high",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(disputedApprovalGate.humanApproval, false);
   assert.equal(disputedApprovalGate.blockingEvidenceAbsent, false);
@@ -440,7 +450,8 @@ test("blocking evidence cannot be hidden beside positive evidence", () => {
   const mediumRiskVetoGate = deriveGate({
     handoffs: [implementation, cleanVerification, explicitHumanRejection],
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: implementation.baseCommit
   });
   assert.equal(mediumRiskVetoGate.humanApproval, true);
   assert.equal(mediumRiskVetoGate.blockingEvidenceAbsent, false);
@@ -577,6 +588,33 @@ test("integration preflight is ready before the Integrator submits a decision", 
   assert.equal(incomplete.readyToMerge, false);
 });
 
+test("merge gates require explicit IntentSpec risk and baseCommit", () => {
+  const implementation = handoff();
+  const inputSchema = TOOL_DEFINITIONS.find((tool) => tool.name === "team.get_gate").inputSchema;
+  assert.deepEqual(inputSchema.required, ["intentId", "risk", "baseCommit"]);
+
+  const explicitGate = deriveGate({
+    handoffs: [implementation],
+    intentId: intent.intentId,
+    risk: intent.constraints.risk,
+    baseCommit: intent.target.baseCommit
+  });
+  assert.equal(explicitGate.expectedBaseCommit, intent.target.baseCommit);
+
+  assert.throws(
+    () => deriveGate({ handoffs: [implementation], intentId: intent.intentId, baseCommit: intent.target.baseCommit }),
+    /risk must be low, medium, or high/
+  );
+  assert.throws(
+    () => deriveGate({ handoffs: [implementation], intentId: intent.intentId, risk: intent.constraints.risk }),
+    /baseCommit must be a Git commit SHA/
+  );
+  assert.throws(
+    () => deriveGate({ handoffs: [implementation], intentId: intent.intentId, risk: intent.constraints.risk, baseCommit: "not-a-sha" }),
+    /baseCommit must be a Git commit SHA/
+  );
+});
+
 test("the MCP dispatcher persists a handoff and exposes tools", async (context) => {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "gitmono-team-test-"));
   context.after(() => rm(stateDir, { recursive: true, force: true }));
@@ -605,7 +643,8 @@ test("the MCP dispatcher persists a handoff and exposes tools", async (context) 
 
   const preflight = await dispatcher.call("team.get_gate", {
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: "a5bf591"
   });
   assert.equal(preflight.integrationPrerequisitesMet, true);
   assert.equal(preflight.readyToMerge, false);
@@ -623,7 +662,8 @@ test("the MCP dispatcher persists a handoff and exposes tools", async (context) 
 
   const postflight = await dispatcher.call("team.get_gate", {
     intentId: "add-session-timeout",
-    risk: "medium"
+    risk: "medium",
+    baseCommit: "a5bf591"
   });
   assert.equal(postflight.readyToMerge, true);
 
@@ -762,8 +802,11 @@ test("the dispatcher enforces every advertised tool inputSchema", async (context
     ["team.list_handoffs", 42],
     ["team.list_handoffs", true],
     ["team.list_handoffs", { intentId: "add-session-timeout", extra: true }],
-    ["team.get_gate", { intentId: "add-session-timeout", risk: "critical" }],
-    ["team.get_gate", { intentId: "add-session-timeout", handoffs: [] }],
+    ["team.get_gate", { intentId: "add-session-timeout", risk: "critical", baseCommit: "a5bf591" }],
+    ["team.get_gate", { intentId: "add-session-timeout", baseCommit: "a5bf591" }],
+    ["team.get_gate", { intentId: "add-session-timeout", risk: "medium" }],
+    ["team.get_gate", { intentId: "add-session-timeout", risk: "medium", baseCommit: "not-a-sha" }],
+    ["team.get_gate", { intentId: "add-session-timeout", risk: "medium", baseCommit: "a5bf591", handoffs: [] }],
     ["team.submit_handoff", {
       ...handoff({ handoffId: undefined, createdAt: undefined }),
       unexpected: "must not be persisted"

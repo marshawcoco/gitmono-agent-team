@@ -67,6 +67,8 @@
 { "intentId": "add-session-timeout", "risk": "medium", "baseCommit": "a5bf591" }
 ```
 
+三个字段都必须直接取自同一份 IntentSpec；缺失 `risk` 或 `baseCommit` 时服务会 fail closed，不再默认中风险或从 Agent Handoff 推测基线。调用参数本身尚未经过身份认证，生产编排器仍应保护 IntentSpec 的可信来源。
+
 返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`blockingEvidenceAbsent`、`baseCommitConsistent`、`humanApproval`、`integrationPrerequisitesMet`、`externalHumanApprovalRequired` 与最终的 `readyToMerge`。旧日志中的 Agent 自报 `human_approval` 不会开启高风险门禁。
 
 Integrator 应始终使用 IntentSpec 中精确的 `intentId`、`risk` 与 `baseCommit` 分两阶段调用门禁。审查前的 preflight 只要求 `integrationPrerequisitesMet: true`，它聚合 Implementer 交付、Verifier 通过及测试证据、`patchRef` 一致、无阻断证据和基线一致；低/中风险提交 `approved` Handoff 后的 postflight 才要求 `readyToMerge: true`。高风险 postflight 必须先确认全部非人工字段为真，再预期得到 `readyToMerge: false` 与 `externalHumanApprovalRequired: true`。外部授权人工门禁必须从 IntentSpec 独立核对精确风险与基线，不能只信任调用参数或单独的 `externalHumanApprovalRequired` 标志。`integrationPrerequisitesMet` 绝不等同于可合并。
