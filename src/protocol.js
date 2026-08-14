@@ -27,6 +27,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const RISK_LEVELS = new Set(["low", "medium", "high"]);
 const EVIDENCE_KINDS = new Set(["build", "test", "review", "security", "human_approval", "finding"]);
 const EVIDENCE_RESULTS = new Set(["passed", "failed", "approved", "rejected", "not_run", "info"]);
+const POSITIVE_HANDOFF_STATUSES = new Set(["ready", "passed", "approved"]);
+const BLOCKING_EVIDENCE_RESULTS = new Set(["failed", "rejected"]);
 
 const HANDOFF_ROUTES = Object.freeze({
   implementer: {
@@ -53,7 +55,17 @@ function hasNonBlankString(value) {
 }
 
 function hasEvidence(handoff, kind, result) {
-  return handoff.evidence?.some((item) => item.kind === kind && item.result === result) ?? false;
+  return Array.isArray(handoff?.evidence)
+    && handoff.evidence.some((item) => isObject(item) && item.kind === kind && item.result === result);
+}
+
+function hasBlockingEvidence(handoff, kind) {
+  return Array.isArray(handoff?.evidence)
+    && handoff.evidence.some((item) => (
+      isObject(item)
+      && (kind === undefined || item.kind === kind)
+      && BLOCKING_EVIDENCE_RESULTS.has(item.result)
+    ));
 }
 
 export function validateIntentSpec(intent) {
@@ -146,6 +158,9 @@ export function validateHandoff(handoff) {
   if (handoff.changedPaths !== undefined && (!Array.isArray(handoff.changedPaths) || handoff.changedPaths.some((item) => !hasNonBlankString(item) || item.startsWith("/") || item.includes("..")))) {
     errors.push("changedPaths, when present, must contain safe relative paths.");
   }
+  if (POSITIVE_HANDOFF_STATUSES.has(handoff.status) && hasBlockingEvidence(handoff)) {
+    errors.push("Positive handoffs cannot contain failed or rejected evidence.");
+  }
 
   if (handoff.from === "implementer" && handoff.status === "ready" && !hasNonBlankString(handoff.patchRef)) {
     errors.push("Implementer ready handoffs require patchRef.");
@@ -194,20 +209,30 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   const baseCommitConsistent = relevantHandoffs.length >= 2
     && expectedBase !== undefined
     && relevantHandoffs.every((handoff) => handoff.baseCommit === expectedBase);
+  const blockingEvidenceAbsent = relevantHandoffs.every((handoff) => !hasBlockingEvidence(handoff));
   const implementerDelivered = implementation?.status === "ready" && hasNonBlankString(implementation.patchRef);
   const verificationPassed = verification?.status === "passed";
-  const testEvidencePassed = verificationPassed && hasEvidence(verification, "test", "passed");
-  const reviewApproved = integration?.status === "approved" && hasEvidence(integration, "review", "approved");
+  const testEvidencePassed = verificationPassed
+    && hasEvidence(verification, "test", "passed")
+    && !hasBlockingEvidence(verification, "test");
+  const reviewApproved = integration?.status === "approved"
+    && hasEvidence(integration, "review", "approved")
+    && !hasBlockingEvidence(integration, "review");
   const patchRefConsistent = relevantHandoffs.length === 3
     && hasNonBlankString(implementation?.patchRef)
     && relevantHandoffs.every((handoff) => handoff.patchRef === implementation.patchRef);
-  const humanApproval = risk !== "high" || (integration?.status === "approved" && hasEvidence(integration, "human_approval", "approved"));
+  const humanApproval = risk !== "high" || (
+    integration?.status === "approved"
+    && hasEvidence(integration, "human_approval", "approved")
+    && !hasBlockingEvidence(integration, "human_approval")
+  );
   const readyToMerge = Boolean(
     implementerDelivered
       && verificationPassed
       && testEvidencePassed
       && reviewApproved
       && patchRefConsistent
+      && blockingEvidenceAbsent
       && baseCommitConsistent
       && humanApproval
   );
@@ -222,6 +247,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
     testEvidencePassed,
     reviewApproved,
     patchRefConsistent,
+    blockingEvidenceAbsent,
     baseCommitConsistent,
     humanApproval,
     readyToMerge
