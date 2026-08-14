@@ -1,15 +1,13 @@
 # syntax=docker/dockerfile:1
 
-# Mirrors the Dockerfile pinned in submodules/scorpiofs, with libclang added for
-# crates that generate native bindings. The entrypoint is normalized to LF so
-# the build also works after a Windows autocrlf checkout.
+# Mirrors the Dockerfile pinned in submodules/scorpiofs. The entrypoint is
+# normalized to LF so the build also works after a Windows autocrlf checkout.
 FROM rust:slim-bookworm AS build
 WORKDIR /src
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         pkg-config \
-        libclang-dev \
         libfuse3-dev \
         libssl-dev \
     && rm -rf /var/lib/apt/lists/*
