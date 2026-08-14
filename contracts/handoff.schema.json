@@ -25,7 +25,7 @@
         "additionalProperties": false,
         "required": ["kind", "result", "summary"],
         "properties": {
-          "kind": { "enum": ["build", "test", "review", "security", "human_approval", "finding"] },
+          "kind": { "enum": ["build", "test", "review", "security", "finding"] },
           "result": { "enum": ["passed", "failed", "approved", "rejected", "not_run", "info"] },
           "summary": { "type": "string", "minLength": 3 },
           "command": { "type": "string" },

@@ -61,15 +61,15 @@
 
 ## `team.get_gate`
 
-计算合并前门禁。高风险任务还需要 Integrator 的 `human_approval: approved` evidence。
+计算合并前门禁。`team-protocol` 不具备可信的人类身份，因此 `risk: high` 时始终保持本地门禁关闭，并返回 `externalHumanApprovalRequired: true`；最终决定由外部授权门禁完成。
 
 ```json
 { "intentId": "add-session-timeout", "risk": "medium", "baseCommit": "a5bf591" }
 ```
 
-返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`blockingEvidenceAbsent`、`baseCommitConsistent`、`humanApproval`、`integrationPrerequisitesMet` 与最终的 `readyToMerge`。
+返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`blockingEvidenceAbsent`、`baseCommitConsistent`、`humanApproval`、`integrationPrerequisitesMet`、`externalHumanApprovalRequired` 与最终的 `readyToMerge`。旧日志中的 Agent 自报 `human_approval` 不会开启高风险门禁。
 
-Integrator 应始终使用 IntentSpec 中精确的 `intentId`、`risk` 与 `baseCommit` 分两阶段调用门禁。审查前的 preflight 只要求 `integrationPrerequisitesMet: true`，它聚合 Implementer 交付、Verifier 通过及测试证据、`patchRef` 一致、无阻断证据和基线一致；提交 `approved` Handoff 后的 postflight 才要求 `readyToMerge: true`。`integrationPrerequisitesMet` 不包含 Integrator 自己的审查或高风险人工审批，因此绝不等同于可合并。
+Integrator 应始终使用 IntentSpec 中精确的 `intentId`、`risk` 与 `baseCommit` 分两阶段调用门禁。审查前的 preflight 只要求 `integrationPrerequisitesMet: true`，它聚合 Implementer 交付、Verifier 通过及测试证据、`patchRef` 一致、无阻断证据和基线一致；低/中风险提交 `approved` Handoff 后的 postflight 才要求 `readyToMerge: true`。高风险 postflight 必须先确认全部非人工字段为真，再预期得到 `readyToMerge: false` 与 `externalHumanApprovalRequired: true`。外部授权人工门禁必须从 IntentSpec 独立核对精确风险与基线，不能只信任调用参数或单独的 `externalHumanApprovalRequired` 标志。`integrationPrerequisitesMet` 绝不等同于可合并。
 
 ## 错误语义
 

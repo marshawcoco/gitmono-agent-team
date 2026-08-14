@@ -47,7 +47,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
             additionalProperties: false,
             required: ["kind", "result", "summary"],
             properties: {
-              kind: { type: "string", enum: ["build", "test", "review", "security", "human_approval", "finding"] },
+              kind: { type: "string", enum: ["build", "test", "review", "security", "finding"] },
               result: { type: "string", enum: ["passed", "failed", "approved", "rejected", "not_run", "info"] },
               summary: { type: "string", minLength: 3 },
               command: { type: "string" },
