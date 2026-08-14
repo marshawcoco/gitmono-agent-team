@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +10,29 @@ import { createDispatcher, handleRequest } from "../src/mcp-server.js";
 import { deriveGate, validateHandoff, validateIntentSpec } from "../src/protocol.js";
 
 const intentPath = new URL("../examples/intent-spec.example.json", import.meta.url);
+const serverPath = fileURLToPath(new URL("../src/mcp-server.js", import.meta.url));
 const intent = JSON.parse(await readFile(intentPath, "utf8"));
+
+function runMcpServer(messages) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [serverPath], { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`MCP server exited with ${code}: ${stderr}`));
+        return;
+      }
+      resolve(stdout.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line)));
+    });
+    child.stdin.end(`${messages.map((message) => JSON.stringify(message)).join("\n")}\n`);
+  });
+}
 
 function handoff(overrides = {}) {
   return {
@@ -408,4 +432,43 @@ test("the MCP dispatcher persists a handoff and exposes tools", async (context) 
   const listed = await dispatcher.call("team.list_handoffs", { intentId: "add-session-timeout" });
   assert.equal(listed.count, 1);
   assert.equal(listed.handoffs[0].handoffId.length > 0, true);
+});
+
+test("JSON-RPC notifications never produce responses", async (context) => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "gitmono-team-notification-test-"));
+  context.after(() => rm(stateDir, { recursive: true, force: true }));
+  const dispatcher = createDispatcher({ stateDir });
+  const notifications = [
+    { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } },
+    { jsonrpc: "2.0", method: "tools/list" },
+    { jsonrpc: "2.0", method: "tools/call", params: { name: "unknown.tool", arguments: {} } }
+  ];
+
+  for (const notification of notifications) {
+    assert.equal(await handleRequest(notification, dispatcher), undefined);
+  }
+
+  const invalidRequest = await handleRequest({ jsonrpc: "2.0", method: 42 }, dispatcher);
+  assert.equal(invalidRequest.id, null);
+  assert.equal(invalidRequest.error.code, -32600);
+
+  const nullIdRequest = await handleRequest({ jsonrpc: "2.0", id: null, method: "tools/list" }, dispatcher);
+  assert.equal(nullIdRequest.id, null);
+  assert.ok(Array.isArray(nullIdRequest.result.tools));
+
+  const nullIdNotificationMethod = await handleRequest({
+    jsonrpc: "2.0",
+    id: null,
+    method: "notifications/initialized"
+  }, dispatcher);
+  assert.equal(nullIdNotificationMethod.id, null);
+  assert.equal(nullIdNotificationMethod.error.code, -32600);
+
+  const wireResponses = await runMcpServer([
+    ...notifications,
+    { jsonrpc: "2.0", id: 7, method: "tools/list" }
+  ]);
+  assert.equal(wireResponses.length, 1);
+  assert.equal(wireResponses[0].id, 7);
+  assert.ok(Array.isArray(wireResponses[0].result.tools));
 });
