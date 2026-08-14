@@ -213,9 +213,11 @@ test("the MCP gate ignores caller-supplied handoffs", async (context) => {
     }
   }, dispatcher);
 
-  assert.equal(response.result.isError, false);
-  assert.equal(response.result.structuredContent.handoffCount, 0);
-  assert.equal(response.result.structuredContent.readyToMerge, false);
+  assert.equal(response.result.isError, true);
+  assert.match(response.result.structuredContent.error, /inputSchema/);
+
+  const listed = await dispatcher.call("team.list_handoffs", {});
+  assert.equal(listed.count, 0);
 });
 
 test("a new implementation invalidates earlier verification and approval", () => {
@@ -547,4 +549,72 @@ test("initialize negotiates only the supported legacy MCP version", async () => 
     params: {}
   }, dispatcher);
   assert.equal(discovery.error.code, -32601);
+});
+
+test("the dispatcher enforces every advertised tool inputSchema", async (context) => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "gitmono-team-schema-test-"));
+  context.after(() => rm(stateDir, { recursive: true, force: true }));
+  const dispatcher = createDispatcher({ stateDir });
+
+  const invalidCalls = [
+    ["team.get_task", { agentId: "verifier", unexpected: true }],
+    ["team.get_task", {}],
+    ["team.list_handoffs", "wrong"],
+    ["team.list_handoffs", null],
+    ["team.list_handoffs", []],
+    ["team.list_handoffs", 42],
+    ["team.list_handoffs", true],
+    ["team.list_handoffs", { intentId: "add-session-timeout", extra: true }],
+    ["team.get_gate", { intentId: "add-session-timeout", risk: "critical" }],
+    ["team.get_gate", { intentId: "add-session-timeout", handoffs: [] }],
+    ["team.submit_handoff", {
+      ...handoff({ handoffId: undefined, createdAt: undefined }),
+      unexpected: "must not be persisted"
+    }],
+    ["team.submit_handoff", handoff({
+      handoffId: undefined,
+      createdAt: undefined,
+      evidence: [{
+        kind: "test",
+        result: "passed",
+        summary: "tests passed",
+        unexpected: "must not be persisted"
+      }]
+    })]
+  ];
+
+  for (const [name, args] of invalidCalls) {
+    await assert.rejects(
+      dispatcher.call(name, args),
+      (error) => error.message === "Tool arguments failed inputSchema validation."
+        && Array.isArray(error.details)
+        && error.details.length > 0
+    );
+  }
+
+  const sensitiveKey = "secret_api_key_must_not_be_reflected";
+  await assert.rejects(
+    dispatcher.call("team.get_task", {
+      agentId: "verifier",
+      [sensitiveKey]: "sensitive-value",
+      ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`extra_${index}`, true]))
+    }),
+    (error) => error.details.length <= 8
+      && !error.details.join("\n").includes(sensitiveKey)
+      && !error.details.join("\n").includes("sensitive-value")
+  );
+
+  const listed = await dispatcher.call("team.list_handoffs", {});
+  assert.equal(listed.count, 0);
+
+  for (const invalidArguments of ["wrong", null]) {
+    const response = await handleRequest({
+      jsonrpc: "2.0",
+      id: "invalid-input",
+      method: "tools/call",
+      params: { name: "team.list_handoffs", arguments: invalidArguments }
+    }, dispatcher);
+    assert.equal(response.result.isError, true);
+    assert.match(response.result.structuredContent.error, /inputSchema/);
+  }
 });
