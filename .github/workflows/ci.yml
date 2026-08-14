@@ -4,72 +4,96 @@ on:
   pull_request:
   push:
     branches: [main]
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   node:
-    name: Node ${{ matrix.node }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    name: Node ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        node: [20.x, 22.x, 24.x]
+        include:
+          - node: 22.23.2
+            label: 22.x
+          - node: 24.19.0
+            label: 24.x
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          if [[ -f package-lock.json ]]; then
-            npm ci --ignore-scripts
-          else
-            npm install --ignore-scripts --no-audit --no-fund
-          fi
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Run tests
         run: npm test
 
-      - name: Run protocol demo
-        run: npm run demo
+      - name: Enforce native coverage thresholds
+        if: matrix.label == '24.x'
+        run: npm run test:coverage
+
+      - name: Assert the protocol demo result
+        if: matrix.label == '24.x'
+        run: npm run demo:check
 
   artifacts:
     name: Contracts and configuration
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Validate JSON artifacts
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(git ls-files -z -- '*.js' '*.cjs' '*.mjs')
+
+      - name: Validate contract schemas and fixtures
+        run: npm run test:contracts
+
+      - name: Validate tracked JSON artifacts
         shell: bash
         run: |
           node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
           import { readFile } from "node:fs/promises";
 
-          const files = [
-            "package.json",
-            "contracts/intent-spec.schema.json",
-            "contracts/handoff.schema.json",
-            "mcp/mcp.template.json"
-          ];
+          const files = execFileSync("git", ["ls-files", "-z", "--", "*.json"], { encoding: "utf8" })
+            .split("\0")
+            .filter(Boolean);
           for (const file of files) {
             JSON.parse(await readFile(file, "utf8"));
             console.log(`validated ${file}`);
@@ -91,11 +115,31 @@ jobs:
             echo "Codex TOML template not present on this revision; skipping."
           fi
 
-      - name: Validate optional Docker Compose model
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+  containers:
+    name: Submodules and containers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate and initialize pinned submodules
         shell: bash
         run: |
-          if [[ -f deploy/compose.yaml ]]; then
-            docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
-          else
-            echo "Compose deployment not present on this revision; skipping."
-          fi
+          bash scripts/ci/verify-submodules.sh --metadata-only
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth 1
+          bash scripts/ci/verify-submodules.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Verify gitlinks, build ScorpioFS, and smoke-test Mega
+        shell: bash
+        run: bash scripts/ci/core-container-smoke.sh
