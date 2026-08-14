@@ -86,7 +86,9 @@ services:
         condition: service_completed_successfully
     environment:
       MEGA_DATABASE__DB_TYPE: postgres
-      MEGA_DATABASE__DB_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-mono}
+      # Keep this as one URL-safe value. Interpolating raw credentials here
+      # would break whenever a username or password contains URL delimiters.
+      MEGA_DATABASE__DB_URL: ${MEGA_DATABASE_URL:?Set MEGA_DATABASE_URL to a percent-encoded PostgreSQL URL}
       MEGA_REDIS__URL: redis://redis:6379
       MEGA_OBJECT_STORAGE__STORAGE_TYPE: s3compatible
       MEGA_OBJECT_STORAGE__S3__ENDPOINT_URL: http://rustfs:9000

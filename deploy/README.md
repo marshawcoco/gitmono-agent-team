@@ -43,6 +43,15 @@ PowerShell 复制环境文件：
 Copy-Item deploy/.env.example deploy/.env
 ```
 
+修改 PostgreSQL 凭据时，还必须同步修改 `MEGA_DATABASE_URL`。该变量作为完整连接 URL 传给 Mega；用户名或密码中的 `/`、`?`、`#`、`%`、`@` 等保留字符必须进行百分号编码。例如，密码 `change@me` 应在 URL 中写成 `change%40me`：
+
+```dotenv
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=change@me
+POSTGRES_DB=mono
+MEGA_DATABASE_URL=postgres://postgres:change%40me@postgres:5432/mono
+```
+
 首次启动会拉取按 OCI digest 固定的 Mega 镜像，并从 `submodules/scorpiofs` 的固定提交构建 ScorpioFS，通常需要数分钟。Windows Git 可能把子模块脚本检出为 CRLF；自定义 ScorpioFS Dockerfile 和 bucket 初始化命令会在容器内将所需入口脚本规范化为 LF。
 
 默认 Mega 镜像便于快速安装，但本仓库无法从其公开元数据证明该 digest 与 `submodules/mega` 的 gitlink 一一对应。需要严格源码对齐时，先从固定 submodule 构建本地镜像，再修改 `deploy/.env`：
