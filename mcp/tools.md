@@ -64,10 +64,12 @@
 计算合并前门禁。高风险任务还需要 Integrator 的 `human_approval: approved` evidence。
 
 ```json
-{ "intentId": "add-session-timeout", "risk": "medium" }
+{ "intentId": "add-session-timeout", "risk": "medium", "baseCommit": "a5bf591" }
 ```
 
-返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`blockingEvidenceAbsent`、`baseCommitConsistent`、`humanApproval` 与最终的 `readyToMerge`。
+返回字段：`implementerDelivered`、`verificationPassed`、`testEvidencePassed`、`reviewApproved`、`patchRefConsistent`、`blockingEvidenceAbsent`、`baseCommitConsistent`、`humanApproval`、`integrationPrerequisitesMet` 与最终的 `readyToMerge`。
+
+Integrator 应始终使用 IntentSpec 中精确的 `intentId`、`risk` 与 `baseCommit` 分两阶段调用门禁。审查前的 preflight 只要求 `integrationPrerequisitesMet: true`，它聚合 Implementer 交付、Verifier 通过及测试证据、`patchRef` 一致、无阻断证据和基线一致；提交 `approved` Handoff 后的 postflight 才要求 `readyToMerge: true`。`integrationPrerequisitesMet` 不包含 Integrator 自己的审查或高风险人工审批，因此绝不等同于可合并。
 
 ## 错误语义
 

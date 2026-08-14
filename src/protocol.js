@@ -204,8 +204,17 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   const verification = verificationEntry?.handoff;
   const integration = integrationEntry?.handoff;
   const expectedBase = baseCommit ?? implementation?.baseCommit;
+  const preflightHandoffs = [implementation, verification].filter(Boolean);
   const relevantHandoffs = [implementation, verification, integration].filter(Boolean);
 
+  const preflightBaseCommitConsistent = preflightHandoffs.length === 2
+    && expectedBase !== undefined
+    && preflightHandoffs.every((handoff) => handoff.baseCommit === expectedBase);
+  const preflightBlockingEvidenceAbsent = preflightHandoffs.length === 2
+    && preflightHandoffs.every((handoff) => !hasBlockingEvidence(handoff));
+  const preflightPatchRefConsistent = preflightHandoffs.length === 2
+    && hasNonBlankString(implementation?.patchRef)
+    && preflightHandoffs.every((handoff) => handoff.patchRef === implementation.patchRef);
   const baseCommitConsistent = relevantHandoffs.length >= 2
     && expectedBase !== undefined
     && relevantHandoffs.every((handoff) => handoff.baseCommit === expectedBase);
@@ -218,7 +227,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   const reviewApproved = integration?.status === "approved"
     && hasEvidence(integration, "review", "approved")
     && !hasBlockingEvidence(integration, "review");
-  const patchRefConsistent = relevantHandoffs.length === 3
+  const patchRefConsistent = relevantHandoffs.length >= 2
     && hasNonBlankString(implementation?.patchRef)
     && relevantHandoffs.every((handoff) => handoff.patchRef === implementation.patchRef);
   const humanApproval = risk !== "high" || (
@@ -226,10 +235,16 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
     && hasEvidence(integration, "human_approval", "approved")
     && !hasBlockingEvidence(integration, "human_approval")
   );
-  const readyToMerge = Boolean(
+  const integrationPrerequisitesMet = Boolean(
     implementerDelivered
       && verificationPassed
       && testEvidencePassed
+      && preflightPatchRefConsistent
+      && preflightBlockingEvidenceAbsent
+      && preflightBaseCommitConsistent
+  );
+  const readyToMerge = Boolean(
+    integrationPrerequisitesMet
       && reviewApproved
       && patchRefConsistent
       && blockingEvidenceAbsent
@@ -250,6 +265,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
     blockingEvidenceAbsent,
     baseCommitConsistent,
     humanApproval,
+    integrationPrerequisitesMet,
     readyToMerge
   };
 }
