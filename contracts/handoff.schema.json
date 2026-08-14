@@ -14,7 +14,7 @@
     "from": { "enum": ["implementer", "verifier", "integrator"] },
     "to": { "enum": ["implementer", "verifier", "integrator", "human", "orchestrator"] },
     "status": { "enum": ["ready", "passed", "needs_changes", "approved", "blocked"] },
-    "patchRef": { "type": "string", "minLength": 1 },
+    "patchRef": { "type": "string", "minLength": 1, "pattern": "\\S" },
     "changedPaths": { "type": "array", "items": { "type": "string" } },
     "summary": { "type": "string", "minLength": 8 },
     "evidence": {
@@ -42,5 +42,26 @@
       }
     },
     "createdAt": { "type": "string", "format": "date-time" }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          {
+            "properties": { "from": { "const": "implementer" }, "status": { "const": "ready" } },
+            "required": ["from", "status"]
+          },
+          {
+            "properties": { "from": { "const": "verifier" }, "status": { "const": "passed" } },
+            "required": ["from", "status"]
+          },
+          {
+            "properties": { "from": { "const": "integrator" }, "status": { "const": "approved" } },
+            "required": ["from", "status"]
+          }
+        ]
+      },
+      "then": { "required": ["patchRef"] }
+    }
+  ]
 }

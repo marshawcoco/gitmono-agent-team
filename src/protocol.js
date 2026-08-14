@@ -150,19 +150,21 @@ export function validateHandoff(handoff) {
   if (handoff.from === "implementer" && handoff.status === "ready" && !hasNonBlankString(handoff.patchRef)) {
     errors.push("Implementer ready handoffs require patchRef.");
   }
-  if (handoff.from === "verifier" && handoff.status === "passed" && !hasEvidence(handoff, "test", "passed")) {
-    errors.push("Verifier passed handoffs require passed test evidence.");
+  if (handoff.from === "verifier" && handoff.status === "passed") {
+    if (!hasNonBlankString(handoff.patchRef)) errors.push("Verifier passed handoffs require patchRef.");
+    if (!hasEvidence(handoff, "test", "passed")) errors.push("Verifier passed handoffs require passed test evidence.");
   }
-  if (handoff.from === "integrator" && handoff.status === "approved" && !hasEvidence(handoff, "review", "approved")) {
-    errors.push("Integrator approved handoffs require approved review evidence.");
+  if (handoff.from === "integrator" && handoff.status === "approved") {
+    if (!hasNonBlankString(handoff.patchRef)) errors.push("Integrator approved handoffs require patchRef.");
+    if (!hasEvidence(handoff, "review", "approved")) errors.push("Integrator approved handoffs require approved review evidence.");
   }
 
   return { valid: errors.length === 0, errors };
 }
 
-function latestByRole(handoffs, role) {
-  for (let index = handoffs.length - 1; index >= 0; index -= 1) {
-    if (handoffs[index].from === role) return handoffs[index];
+function latestByRoleAfter(handoffs, role, afterIndex = -1) {
+  for (let index = handoffs.length - 1; index > afterIndex; index -= 1) {
+    if (handoffs[index].from === role) return { handoff: handoffs[index], index };
   }
   return undefined;
 }
@@ -173,9 +175,19 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   if (!RISK_LEVELS.has(risk)) throw new TypeError("risk must be low, medium, or high.");
 
   const chain = handoffs.filter((handoff) => handoff.intentId === intentId);
-  const implementation = latestByRole(chain, "implementer");
-  const verification = latestByRole(chain, "verifier");
-  const integration = latestByRole(chain, "integrator");
+  // Each stage must have been appended after the stage it evaluates. A newer
+  // implementation therefore invalidates verification and approval from an
+  // earlier PatchSet, even when the intent and base commit are unchanged.
+  const implementationEntry = latestByRoleAfter(chain, "implementer");
+  const verificationEntry = implementationEntry
+    ? latestByRoleAfter(chain, "verifier", implementationEntry.index)
+    : undefined;
+  const integrationEntry = verificationEntry
+    ? latestByRoleAfter(chain, "integrator", verificationEntry.index)
+    : undefined;
+  const implementation = implementationEntry?.handoff;
+  const verification = verificationEntry?.handoff;
+  const integration = integrationEntry?.handoff;
   const expectedBase = baseCommit ?? implementation?.baseCommit;
   const relevantHandoffs = [implementation, verification, integration].filter(Boolean);
 
@@ -186,12 +198,16 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
   const verificationPassed = verification?.status === "passed";
   const testEvidencePassed = verificationPassed && hasEvidence(verification, "test", "passed");
   const reviewApproved = integration?.status === "approved" && hasEvidence(integration, "review", "approved");
+  const patchRefConsistent = relevantHandoffs.length === 3
+    && hasNonBlankString(implementation?.patchRef)
+    && relevantHandoffs.every((handoff) => handoff.patchRef === implementation.patchRef);
   const humanApproval = risk !== "high" || (integration?.status === "approved" && hasEvidence(integration, "human_approval", "approved"));
   const readyToMerge = Boolean(
     implementerDelivered
       && verificationPassed
       && testEvidencePassed
       && reviewApproved
+      && patchRefConsistent
       && baseCommitConsistent
       && humanApproval
   );
@@ -205,6 +221,7 @@ export function deriveGate({ handoffs, intentId, risk = "medium", baseCommit } =
     verificationPassed,
     testEvidencePassed,
     reviewApproved,
+    patchRefConsistent,
     baseCommitConsistent,
     humanApproval,
     readyToMerge

@@ -17,7 +17,7 @@ title: Integration Guardian
 
 1. 调用 `team.get_gate`；确认实现、通过测试、审查结论与基线均存在。
 2. 检查变更是否仍满足 `allowedPaths`、是否有冲突及风险是否升级。
-3. 对低/中风险任务，附 `review: approved` evidence 并将 `status: approved` 发送至 `human` 或发布编排器。
+3. 对低/中风险任务，复制已验证 Handoff 的同一 `patchRef`，附 `review: approved` evidence 并将 `status: approved` 发送至 `human` 或发布编排器。
 4. 对高风险任务，要求 `human_approval: approved` evidence；否则只提交 `blocked` / `needs_human_approval` 决定。
 
 ## 禁止事项
