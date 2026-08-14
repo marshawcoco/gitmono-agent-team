@@ -135,39 +135,44 @@ function toolResult(value, isError = false) {
   };
 }
 
+function requestResponse(request, payload) {
+  if (!Object.prototype.hasOwnProperty.call(request, "id")) return undefined;
+  return { jsonrpc: "2.0", id: request.id, ...payload };
+}
+
 export async function handleRequest(request, dispatcher) {
   if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") {
     return { jsonrpc: "2.0", id: request?.id ?? null, error: { code: -32600, message: "Invalid JSON-RPC request." } };
   }
-  if (request.method === "notifications/initialized") return undefined;
+  if (request.method === "notifications/initialized") {
+    return requestResponse(request, {
+      error: { code: -32600, message: "Notification methods must omit id." }
+    });
+  }
 
   if (request.method === "initialize") {
-    return {
-      jsonrpc: "2.0",
-      id: request.id,
+    return requestResponse(request, {
       result: {
         protocolVersion: request.params?.protocolVersion ?? "2025-03-26",
         capabilities: { tools: {} },
         serverInfo: { name: "gitmono-team-protocol", version: "0.1.0" }
       }
-    };
+    });
   }
   if (request.method === "tools/list") {
-    return { jsonrpc: "2.0", id: request.id, result: { tools: TOOL_DEFINITIONS } };
+    return requestResponse(request, { result: { tools: TOOL_DEFINITIONS } });
   }
   if (request.method === "tools/call") {
     try {
       const result = await dispatcher.call(request.params?.name, request.params?.arguments ?? {});
-      return { jsonrpc: "2.0", id: request.id, result: toolResult(result) };
+      return requestResponse(request, { result: toolResult(result) });
     } catch (error) {
-      return {
-        jsonrpc: "2.0",
-        id: request.id,
+      return requestResponse(request, {
         result: toolResult({ error: error.message, details: error.details ?? [] }, true)
-      };
+      });
     }
   }
-  return { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Method not found." } };
+  return requestResponse(request, { error: { code: -32601, message: "Method not found." } });
 }
 
 export async function startServer() {
