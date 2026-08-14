@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "demo": "node src/demo.js",
-    "test": "node --test"
+    "test": "node scripts/run-tests.js"
   },
   "engines": {
     "node": ">=20"
