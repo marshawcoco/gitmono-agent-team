@@ -114,7 +114,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["intentId"],
+      required: ["intentId", "risk", "baseCommit"],
       properties: {
         intentId: { type: "string", pattern: "^[a-z][a-z0-9-]{2,63}$" },
         risk: { type: "string", enum: ["low", "medium", "high"] },
