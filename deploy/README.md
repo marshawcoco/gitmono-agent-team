@@ -90,9 +90,11 @@ ScorpioFS 上游示例仍使用 `/lfs`，但当前锁定的 Mega 提供通用 `/
 docker compose --env-file deploy/.env -f deploy/compose.yaml ps
 curl --fail http://127.0.0.1:8000/api/v1/status
 curl --fail http://127.0.0.1:2725/health
-docker compose --env-file deploy/.env -f deploy/compose.yaml exec scorpiofs \
-  scorpio --config-path /etc/scorpiofs/scorpio.toml doctor
+docker compose --env-file deploy/.env -f deploy/compose.yaml run \
+  --rm --no-deps --no-TTY scorpiofs doctor
 ```
+
+`doctor` 使用一次性 sibling container，继承 ScorpioFS service 的镜像、配置、网络和 named volume，但不进入长期 service container 已被私有 FUSE 子挂载覆盖的 mount namespace。这样能可靠验证底层 workspace 可写性；真实 FUSE 数据通路仍由 mount readiness、mountinfo 以及写入、精确读取、删除探针单独验证。
 
 ScorpioFS 的 `/health` 是轻量存活检查，不验证 Mega 或具体 FUSE mount。创建 Antares mount 后，应另外检查 `GET /antares/mounts/{id}/ready`。
 

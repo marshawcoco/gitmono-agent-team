@@ -90,8 +90,9 @@ fi
 test "$(curl --fail --silent --show-error http://127.0.0.1:8000/api/v1/status)" = '"http ready"'
 curl --fail --silent --show-error http://127.0.0.1:2725/health >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:2725/antares/health >/dev/null
-"${compose[@]}" exec --no-TTY scorpiofs \
-  scorpio --config-path /etc/scorpiofs/scorpio.toml doctor
+# The service namespace may already overlay the shared workspace with its private
+# FUSE submount. Run the writable doctor probe in a fresh sibling namespace.
+"${compose[@]}" run --rm --no-deps --no-TTY scorpiofs doctor
 
 mount_path="${SCORPIO_CI_MOUNT_PATH:-/}"
 job_id="gitmono-fuse-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
@@ -170,6 +171,7 @@ fi
   printf "fuse-smoke\n" > "${probe}"
   test "$(cat "${probe}")" = "fuse-smoke"
   rm -f "${probe}"
+  test ! -e "${probe}"
 '
 
 curl --fail --silent --show-error --request DELETE \
